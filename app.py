@@ -16,29 +16,22 @@ with st.sidebar:
         st.success("Admin unlocked!")
 
 # --- Connect to Google Sheets ---
-# Fallback instruments just in case the sheet is empty or fails to load
 default_instruments = [
     {"Instrument": "NQ", "Value per point": 20.0, "Tick Size": 0.25},
     {"Instrument": "ES", "Value per point": 50.0, "Tick Size": 0.25},
 ]
 
-# Since the sheet is public, we can bypass Secrets and put the URL directly here!
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1rjvLA8T9uzJWAYfGj6VWDb6jOUfcEcnW2OJR4VVPuU0/edit"
-
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # Notice we added spreadsheet=SHEET_URL here to force it to use this link
-    instruments_df = conn.read(spreadsheet=SHEET_URL, worksheet="Instruments", ttl="0m") 
-    instruments_df = instruments_df.dropna(how="all") # Clean empty rows
+    instruments_df = conn.read(worksheet="Instruments", ttl="0m") 
+    instruments_df = instruments_df.dropna(how="all") 
     
     if instruments_df.empty:
         instruments_df = pd.DataFrame(default_instruments)
 except Exception as e:
     instruments_df = pd.DataFrame(default_instruments)
-    # THIS will print the exact technical error to your screen if it fails again
     st.sidebar.error(f"⚠️ Google Sheets Error: {e}") 
 
-# Save the cloud data to session state for the editor
 if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_refresh', True):
     st.session_state.instruments_df = instruments_df
     st.session_state.force_refresh = False
@@ -171,4 +164,5 @@ if is_invalid_violation:
     st.success(f"**Status:** {status} - The loss did not exceed the MLL distance.")
 else:
     st.error(f"**Status:** {status} - The MLL limit was breached!")
+
 

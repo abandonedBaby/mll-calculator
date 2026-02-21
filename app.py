@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 
 # 1. Setup Instrument Dictionary (Extracted from Instruments.csv)
-# Format: "Instrument": {"Tick Value": tick_val, "Ticks per Pt": ticks_per_pt}
 INSTRUMENTS = {
     "NQ": {"Tick Value": 5.0, "Ticks per Pt": 4},
     "MNQ": {"Tick Value": 0.5, "Ticks per Pt": 4},
@@ -18,17 +17,65 @@ INSTRUMENTS = {
 
 st.set_page_config(page_title="Invalid MLL Violation Checker", layout="centered")
 
+# --- Session State Initialization ---
+# We use this to remember the values between button clicks and pop-ups
+if "avg_fill_price" not in st.session_state:
+    st.session_state.avg_fill_price = 24798.25
+if "total_qty" not in st.session_state:
+    st.session_state.total_qty = 2
+if "fill_data" not in st.session_state:
+    # Default table data for the pop-up
+    st.session_state.fill_data = pd.DataFrame([{"Qty": 1, "Price": 24798.25}, {"Qty": 1, "Price": 24800.00}])
+
+# --- Pop-up Dialog for Weighted Average ---
+@st.dialog("Calculate Weighted Average Fill")
+def weighted_average_dialog():
+    st.markdown("Enter your multiple fills below. You can add or delete rows at the bottom.")
+    
+    # Display an editable spreadsheet-like table
+    edited_df = st.data_editor(
+        st.session_state.fill_data, 
+        num_rows="dynamic", # Allows user to add new rows
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    if st.button("Calculate & Apply", type="primary"):
+        # Filter out empty or zero rows to avoid math errors
+        valid_fills = edited_df[(edited_df["Qty"] > 0) & (edited_df["Price"] > 0)]
+        
+        if not valid_fills.empty:
+            # Weighted Average Math: Sum of (Qty * Price) / Total Qty
+            total_q = int(valid_fills["Qty"].sum())
+            weighted_p = float((valid_fills["Qty"] * valid_fills["Price"]).sum() / total_q)
+            
+            # Save the new values to memory
+            st.session_state.total_qty = total_q
+            st.session_state.avg_fill_price = weighted_p
+            st.session_state.fill_data = edited_df # Save the table state so it's there next time
+            
+            st.rerun() # Refresh the app to instantly apply the new values
+        else:
+            st.error("Please enter at least one valid Qty and Price.")
+
+# --- App Header ---
 st.title("📊 Invalid MLL Violation Checker")
 st.markdown("Recreation of the MLL Calculation Spreadsheet")
 
 # --- Inputs Section ---
 st.header("Trade Details")
+
+# Button to trigger the pop-up
+if st.button("🧮 Add Multiple Entries (Weighted Average)"):
+    weighted_average_dialog()
+
 col1, col2 = st.columns(2)
 
 with col1:
     instrument = st.selectbox("Instrument", options=list(INSTRUMENTS.keys()), index=0)
-    qty = st.number_input("Quantity (Qty)", min_value=1, value=2, step=1)
-    fill_price = st.number_input("Fill Price (Avg)", value=24798.25, format="%.2f")
+    # Notice the "value" fields are now pulling from st.session_state
+    qty = st.number_input("Quantity (Qty)", min_value=1, value=st.session_state.total_qty, step=1)
+    fill_price = st.number_input("Fill Price (Avg)", value=st.session_state.avg_fill_price, format="%.2f")
     close_price = st.number_input("Close Price", value=24845.75, format="%.2f")
 
 with col2:
@@ -42,18 +89,14 @@ tick_value = INSTRUMENTS[instrument]["Tick Value"]
 ticks_per_pt = INSTRUMENTS[instrument]["Ticks per Pt"]
 
 # 2. MAE Calculation
-# MAE is adverse, so it will be strictly negative based on maximum adverse excursion
 price_diff = abs(high_low - fill_price)
 mae = - (price_diff * tick_value * ticks_per_pt * qty)
 
 # 3. MLL Calculations
 dist_2_mll = balance_before - mll
-
-# Mathematical difference (Amount of breathing room left)
 difference = dist_2_mll + mae  
 
-# Violation Logic: If the MAE exceeds the distance to MLL, it's a valid violation.
-# Otherwise, the system flagging it was "Invalid"
+# Violation Logic
 is_invalid_violation = abs(mae) <= dist_2_mll
 status = "Invalid" if is_invalid_violation else "Valid Violation"
 
@@ -61,8 +104,7 @@ status = "Invalid" if is_invalid_violation else "Valid Violation"
 st.header("Calculation Results")
 
 # Display Lookup values
-st.write(f"**Tick Value:** {tick_value}")
-st.write(f"**Ticks per Pt:** {ticks_per_pt}")
+st.write(f"**Tick Value:** {tick_value} | **Ticks per Pt:** {ticks_per_pt}")
 
 st.divider()
 

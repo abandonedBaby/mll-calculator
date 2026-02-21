@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 
-# Page config must be the very first Streamlit command
 st.set_page_config(page_title="Invalid MLL Violation Checker", layout="wide")
 
 # --- Session State Initialization ---
@@ -66,22 +65,28 @@ def weighted_average_dialog():
             st.error("Please enter at least one valid Qty and Price.")
 
 # --- App Header & Layout Toggle ---
-top_col1, top_col2 = st.columns([3, 1])
+# Hide the label on the radio button to save space and align it better
+top_col1, top_col2 = st.columns([3, 1], vertical_alignment="bottom")
 with top_col1:
     st.title("📊 Invalid MLL Violation Checker")
 with top_col2:
-    st.write("") # Spacer
-    layout_mode = st.radio("View Mode", ["Standard", "Compact"], horizontal=True)
+    layout_mode = st.radio("View Mode", ["Standard", "Compact"], horizontal=True, label_visibility="collapsed")
 
-# Inject CSS to shrink white space if Compact is selected
+# Inject Responsive CSS for Compact Mode
 if layout_mode == "Compact":
     st.markdown("""
         <style>
             .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-            h1 { margin-bottom: -1rem; }
-            h2 { margin-bottom: -1rem; padding-top: 0rem; }
+            /* Clamp font size: minimum 1.5rem, scales with view width, max 2.5rem */
+            h1 { font-size: clamp(1.5rem, 4vw, 2.5rem) !important; padding-top: 0 !important; }
             div[data-testid="stMetricValue"] { font-size: 1.5rem; }
             hr { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+            
+            /* Only apply negative margins on larger screens to prevent overlap when stacked */
+            @media (min-width: 800px) {
+                h1 { margin-bottom: -1.5rem; }
+                h2 { margin-bottom: -1rem; padding-top: 0rem; }
+            }
         </style>
     """, unsafe_allow_html=True)
 

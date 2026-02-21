@@ -64,31 +64,25 @@ def weighted_average_dialog():
         else:
             st.error("Please enter at least one valid Qty and Price.")
 
-# --- App Header & Layout Toggle ---
-# Hide the label on the radio button to save space and align it better
-top_col1, top_col2 = st.columns([3, 1], vertical_alignment="bottom")
-with top_col1:
-    st.title("📊 Invalid MLL Violation Checker")
-with top_col2:
-    layout_mode = st.radio("View Mode", ["Standard", "Compact"], horizontal=True, label_visibility="collapsed")
+# --- App Header & Responsive CSS ---
+st.title("📊 Invalid MLL Violation Checker")
 
 # Inject Responsive CSS for Compact Mode
-if layout_mode == "Compact":
-    st.markdown("""
-        <style>
-            .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-            /* Clamp font size: minimum 1.5rem, scales with view width, max 2.5rem */
-            h1 { font-size: clamp(1.5rem, 4vw, 2.5rem) !important; padding-top: 0 !important; }
-            div[data-testid="stMetricValue"] { font-size: 1.5rem; }
-            hr { margin-top: 0.5rem; margin-bottom: 0.5rem; }
-            
-            /* Only apply negative margins on larger screens to prevent overlap when stacked */
-            @media (min-width: 800px) {
-                h1 { margin-bottom: -1.5rem; }
-                h2 { margin-bottom: -1rem; padding-top: 0rem; }
-            }
-        </style>
-    """, unsafe_allow_html=True)
+st.markdown("""
+    <style>
+        .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+        /* Clamp font size: minimum 1.5rem, scales with view width, max 2.5rem */
+        h1 { font-size: clamp(1.5rem, 4vw, 2.5rem) !important; padding-top: 0 !important; }
+        div[data-testid="stMetricValue"] { font-size: 1.5rem; }
+        hr { margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        
+        /* Only apply negative margins on larger screens to prevent overlap when stacked on mobile */
+        @media (min-width: 800px) {
+            h1 { margin-bottom: -1.5rem; }
+            h2 { margin-bottom: -1rem; padding-top: 0rem; }
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # Action Buttons
 btn_col1, btn_col2 = st.columns(2)
@@ -99,40 +93,25 @@ with btn_col2:
     if st.button("⚙️ Manage Instruments"):
         manage_instruments_dialog()
 
-st.markdown("---" if layout_mode == "Standard" else "")
-
-# --- Inputs Section ---
+# --- Inputs Section (Permanent Compact Layout) ---
 instrument_list = list(INSTRUMENTS.keys())
 if not instrument_list:
     instrument_list = ["None"]
     INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.0}
 
-if layout_mode == "Standard":
-    st.header("Trade Details")
-    col1, col2 = st.columns(2)
-    with col1:
-        instrument = st.selectbox("Instrument", options=instrument_list, index=0)
-        qty = st.number_input("Quantity (Qty)", min_value=1, value=st.session_state.total_qty, step=1)
-        fill_price = st.number_input("Fill Price (Avg)", value=st.session_state.avg_fill_price, format="%.2f")
-        close_price = st.number_input("Close Price", value=24845.75, format="%.2f")
-    with col2:
-        high_low = st.number_input("High/Low", value=24848.00, format="%.2f")
-        balance_before = st.number_input("Balance Before", value=0.00, format="%.2f")
-        mll = st.number_input("MLL", value=-2000.00, format="%.2f")
-else: # Compact Layout
-    st.subheader("Trade Details")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        instrument = st.selectbox("Instrument", options=instrument_list, index=0)
-        close_price = st.number_input("Close Price", value=24845.75, format="%.2f")
-    with c2:
-        qty = st.number_input("Quantity (Qty)", min_value=1, value=st.session_state.total_qty, step=1)
-        high_low = st.number_input("High/Low", value=24848.00, format="%.2f")
-    with c3:
-        fill_price = st.number_input("Fill Price (Avg)", value=st.session_state.avg_fill_price, format="%.2f")
-        balance_before = st.number_input("Balance Before", value=0.00, format="%.2f")
-    with c4:
-        mll = st.number_input("MLL", value=-2000.00, format="%.2f")
+st.subheader("Trade Details")
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    instrument = st.selectbox("Instrument", options=instrument_list, index=0)
+    close_price = st.number_input("Close Price", value=24845.75, format="%.2f")
+with c2:
+    qty = st.number_input("Quantity (Qty)", min_value=1, value=st.session_state.total_qty, step=1)
+    high_low = st.number_input("High/Low", value=24848.00, format="%.2f")
+with c3:
+    fill_price = st.number_input("Fill Price (Avg)", value=st.session_state.avg_fill_price, format="%.2f")
+    balance_before = st.number_input("Balance Before", value=0.00, format="%.2f")
+with c4:
+    mll = st.number_input("MLL", value=-2000.00, format="%.2f")
 
 # --- Calculations Section ---
 tick_value = INSTRUMENTS[instrument]["Tick Value"]
@@ -148,23 +127,16 @@ is_invalid_violation = abs(mae) <= dist_2_mll
 status = "Invalid" if is_invalid_violation else "Valid Violation"
 
 # --- Output Section ---
-if layout_mode == "Standard":
-    st.header("Calculation Results")
-else:
-    st.subheader("Calculation Results")
+st.subheader("Calculation Results")
 
 # Display Lookup values
 st.write(f"**Calculated Tick Value:** {tick_value:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Calculated Ticks per Pt:** {ticks_per_pt:,.2f}")
-
-if layout_mode == "Standard": st.divider()
 
 # Metrics Display
 metric_col1, metric_col2, metric_col3 = st.columns(3)
 metric_col1.metric("MAE", f"${mae:,.2f}")
 metric_col2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 metric_col3.metric("Difference", f"${difference:,.2f}")
-
-if layout_mode == "Standard": st.divider()
 
 if is_invalid_violation:
     st.success(f"**Status:** {status} - The loss did not exceed the MLL distance.")

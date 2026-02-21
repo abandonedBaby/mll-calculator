@@ -22,17 +22,21 @@ default_instruments = [
     {"Instrument": "ES", "Value per point": 50.0, "Tick Size": 0.25},
 ]
 
+# Since the sheet is public, we can bypass Secrets and put the URL directly here!
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1rjvLA8T9uzJWAYfGj6VWDb6jOUfcEcnW2OJR4VVPuU0/edit"
+
 try:
-    # Connect to the Google Sheet defined in your Streamlit Secrets
     conn = st.connection("gsheets", type=GSheetsConnection)
-    instruments_df = conn.read(worksheet="Instruments", ttl="0m") # ttl=0 forces it to pull fresh data
+    # Notice we added spreadsheet=SHEET_URL here to force it to use this link
+    instruments_df = conn.read(spreadsheet=SHEET_URL, worksheet="Instruments", ttl="0m") 
     instruments_df = instruments_df.dropna(how="all") # Clean empty rows
     
     if instruments_df.empty:
         instruments_df = pd.DataFrame(default_instruments)
 except Exception as e:
     instruments_df = pd.DataFrame(default_instruments)
-    st.sidebar.warning("⚠️ Google Sheets not connected yet. Using defaults.")
+    # THIS will print the exact technical error to your screen if it fails again
+    st.sidebar.error(f"⚠️ Google Sheets Error: {e}") 
 
 # Save the cloud data to session state for the editor
 if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_refresh', True):
@@ -167,3 +171,4 @@ if is_invalid_violation:
     st.success(f"**Status:** {status} - The loss did not exceed the MLL distance.")
 else:
     st.error(f"**Status:** {status} - The MLL limit was breached!")
+

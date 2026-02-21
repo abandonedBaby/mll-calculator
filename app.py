@@ -1,24 +1,45 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Invalid MLL Violation Checker", layout="wide")
 
-# --- Session State Initialization ---
-if "instruments_df" not in st.session_state:
-    default_instruments = [
-        {"Instrument": "NQ", "Value per point": 20.0, "Tick Size": 0.25},
-        {"Instrument": "MNQ", "Value per point": 2.0, "Tick Size": 0.25},
-        {"Instrument": "ES", "Value per point": 50.0, "Tick Size": 0.25},
-        {"Instrument": "MES", "Value per point": 5.0, "Tick Size": 0.25},
-        {"Instrument": "GC", "Value per point": 100.0, "Tick Size": 0.10},
-        {"Instrument": "MGC", "Value per point": 10.0, "Tick Size": 0.10},
-        {"Instrument": "RTY", "Value per point": 50.0, "Tick Size": 0.10},
-        {"Instrument": "YM", "Value per point": 5.0, "Tick Size": 1.00},
-        {"Instrument": "MBT", "Value per point": 0.1, "Tick Size": 5.00},
-        {"Instrument": "MYM", "Value per point": 0.5, "Tick Size": 0.50},
-    ]
-    st.session_state.instruments_df = pd.DataFrame(default_instruments)
+# --- Admin Access (Hidden in Sidebar) ---
+with st.sidebar:
+    st.header("🔐 Admin Access")
+    admin_password = st.text_input("Password", type="password")
+    
+    expected_password = st.secrets.get("admin_password", "admin123")
+    is_admin = (admin_password == expected_password)
+    
+    if is_admin:
+        st.success("Admin unlocked!")
 
+# --- Connect to Google Sheets ---
+# Fallback instruments just in case the sheet is empty or fails to load
+default_instruments = [
+    {"Instrument": "NQ", "Value per point": 20.0, "Tick Size": 0.25},
+    {"Instrument": "ES", "Value per point": 50.0, "Tick Size": 0.25},
+]
+
+try:
+    # Connect to the Google Sheet defined in your Streamlit Secrets
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    instruments_df = conn.read(worksheet="Instruments", ttl="0m") # ttl=0 forces it to pull fresh data
+    instruments_df = instruments_df.dropna(how="all") # Clean empty rows
+    
+    if instruments_df.empty:
+        instruments_df = pd.DataFrame(default_instruments)
+except Exception as e:
+    instruments_df = pd.DataFrame(default_instruments)
+    st.sidebar.warning("⚠️ Google Sheets not connected yet. Using defaults.")
+
+# Save the cloud data to session state for the editor
+if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_refresh', True):
+    st.session_state.instruments_df = instruments_df
+    st.session_state.force_refresh = False
+
+# --- Other Session State Initialization ---
 if "avg_fill_price" not in st.session_state:
     st.session_state.avg_fill_price = 24798.25
 if "total_qty" not in st.session_state:
@@ -29,9 +50,11 @@ if "fill_data" not in st.session_state:
 # --- Build Instrument Dictionary dynamically ---
 INSTRUMENTS = {}
 for _, row in st.session_state.instruments_df.iterrows():
-    name = row["Instrument"]
-    val_per_pt = row["Value per point"]
-    tick_size = row["Tick Size"]
+    name = str(row["Instrument"]).strip()
+    if name == "nan" or name == "": continue
+    
+    val_per_pt = float(row["Value per point"])
+    tick_size = float(row["Tick Size"])
     
     ticks_per_pt = 1 / tick_size if tick_size != 0 else 0
     tick_val = val_per_pt * tick_size
@@ -40,17 +63,24 @@ for _, row in st.session_state.instruments_df.iterrows():
 # --- Pop-up Dialogs ---
 @st.dialog("⚙️ Manage Instruments")
 def manage_instruments_dialog():
-    st.markdown("Add, edit, or delete instruments. **Tick Value** and **Ticks per Pt** will be calculated automatically.")
+    st.markdown("Add, edit, or delete instruments. Changes will sync permanently to Google Sheets.")
     edited_df = st.data_editor(st.session_state.instruments_df, num_rows="dynamic", use_container_width=True, hide_index=True)
-    if st.button("Save Instruments", type="primary"):
+    
+    if st.button("Save to Cloud", type="primary"):
         cleaned_df = edited_df.dropna(subset=["Instrument"])
         cleaned_df = cleaned_df[cleaned_df["Instrument"].astype(str).str.strip() != ""]
-        st.session_state.instruments_df = cleaned_df
-        st.rerun()
+        
+        try:
+            # Push the new data back up to the Google Sheet
+            conn.update(worksheet="Instruments", data=cleaned_df)
+            st.session_state.force_refresh = True # Force a fresh pull on the next run
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to save to Google Sheets. Check your setup.")
 
 @st.dialog("Calculate Weighted Average Fill")
 def weighted_average_dialog():
-    st.markdown("Enter your multiple fills below. You can add or delete rows at the bottom.")
+    st.markdown("Enter your multiple fills below.")
     edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
     if st.button("Calculate & Apply", type="primary"):
         valid_fills = edited_df[(edited_df["Qty"] > 0) & (edited_df["Price"] > 0)]
@@ -67,16 +97,12 @@ def weighted_average_dialog():
 # --- App Header & Responsive CSS ---
 st.title("📊 Invalid MLL Violation Checker")
 
-# Inject Responsive CSS for Compact Mode
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-        /* Clamp font size: minimum 1.5rem, scales with view width, max 2.5rem */
         h1 { font-size: clamp(1.5rem, 4vw, 2.5rem) !important; padding-top: 0 !important; }
         div[data-testid="stMetricValue"] { font-size: 1.5rem; }
         hr { margin-top: 0.5rem; margin-bottom: 0.5rem; }
-        
-        /* Only apply negative margins on larger screens to prevent overlap when stacked on mobile */
         @media (min-width: 800px) {
             h1 { margin-bottom: -1.5rem; }
             h2 { margin-bottom: -1rem; padding-top: 0rem; }
@@ -90,10 +116,11 @@ with btn_col1:
     if st.button("🧮 Add Multiple Entries (Average)"):
         weighted_average_dialog()
 with btn_col2:
-    if st.button("⚙️ Manage Instruments"):
-        manage_instruments_dialog()
+    if is_admin:
+        if st.button("⚙️ Manage Instruments"):
+            manage_instruments_dialog()
 
-# --- Inputs Section (Permanent Compact Layout) ---
+# --- Inputs Section ---
 instrument_list = list(INSTRUMENTS.keys())
 if not instrument_list:
     instrument_list = ["None"]
@@ -129,10 +156,8 @@ status = "Invalid" if is_invalid_violation else "Valid Violation"
 # --- Output Section ---
 st.subheader("Calculation Results")
 
-# Display Lookup values
 st.write(f"**Calculated Tick Value:** {tick_value:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Calculated Ticks per Pt:** {ticks_per_pt:,.2f}")
 
-# Metrics Display
 metric_col1, metric_col2, metric_col3 = st.columns(3)
 metric_col1.metric("MAE", f"${mae:,.2f}")
 metric_col2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")

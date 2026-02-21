@@ -36,12 +36,15 @@ if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_
     st.session_state.instruments_df = instruments_df
     st.session_state.force_refresh = False
 
-# --- Other Session State Initialization ---
-if "avg_fill_price" not in st.session_state:
-    st.session_state.avg_fill_price = 24798.25
-if "total_qty" not in st.session_state:
-    st.session_state.total_qty = 2
-if "fill_data" not in st.session_state:
+# --- Widget Session State Initialization ---
+# We use keys to set default values, which allows the Clear button to overwrite them
+if "qty" not in st.session_state: st.session_state.qty = 2
+if "fill_price" not in st.session_state: st.session_state.fill_price = 24798.25
+if "close_price" not in st.session_state: st.session_state.close_price = 24845.75
+if "high_low" not in st.session_state: st.session_state.high_low = 24848.00
+if "balance_before" not in st.session_state: st.session_state.balance_before = 0.00
+if "mll" not in st.session_state: st.session_state.mll = -2000.00
+if "fill_data" not in st.session_state: 
     st.session_state.fill_data = pd.DataFrame([{"Qty": 1, "Price": 24798.25}, {"Qty": 1, "Price": 24800.00}])
 
 # --- Build Instrument Dictionary dynamically ---
@@ -57,7 +60,17 @@ for _, row in st.session_state.instruments_df.iterrows():
     tick_val = val_per_pt * tick_size
     INSTRUMENTS[name] = {"Tick Value": tick_val, "Ticks per Pt": ticks_per_pt}
 
-# --- Pop-up Dialogs ---
+# --- Actions & Dialogs ---
+def clear_all():
+    """Resets all input fields to 0"""
+    st.session_state.qty = 0
+    st.session_state.fill_price = 0.00
+    st.session_state.close_price = 0.00
+    st.session_state.high_low = 0.00
+    st.session_state.balance_before = 0.00
+    st.session_state.mll = 0.00
+    st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
+
 @st.dialog("⚙️ Manage Instruments")
 def manage_instruments_dialog():
     st.markdown("Add, edit, or delete instruments. Changes will sync permanently to Google Sheets.")
@@ -68,9 +81,8 @@ def manage_instruments_dialog():
         cleaned_df = cleaned_df[cleaned_df["Instrument"].astype(str).str.strip() != ""]
         
         try:
-            # Push the new data back up to the Google Sheet
             conn.update(worksheet="Instruments", data=cleaned_df)
-            st.session_state.force_refresh = True # Force a fresh pull on the next run
+            st.session_state.force_refresh = True 
             st.rerun()
         except Exception as e:
             st.error(f"Failed to save to Google Sheets. Check your setup.")
@@ -84,8 +96,10 @@ def weighted_average_dialog():
         if not valid_fills.empty:
             total_q = int(valid_fills["Qty"].sum())
             weighted_p = float((valid_fills["Qty"] * valid_fills["Price"]).sum() / total_q)
-            st.session_state.total_qty = total_q
-            st.session_state.avg_fill_price = weighted_p
+            
+            # Save results directly to the keys used by the input boxes
+            st.session_state.qty = total_q
+            st.session_state.fill_price = weighted_p
             st.session_state.fill_data = edited_df 
             st.rerun() 
         else:
@@ -108,14 +122,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Action Buttons
-btn_col1, btn_col2 = st.columns(2)
+btn_col1, btn_col2, btn_col3 = st.columns(3)
 with btn_col1:
-    if st.button("🧮 Add Multiple Entries (Average)"):
+    if st.button("🧮 Add Multiple Entries"):
         weighted_average_dialog()
 with btn_col2:
     if is_admin:
         if st.button("⚙️ Manage Instruments"):
             manage_instruments_dialog()
+with btn_col3:
+    if st.button("🗑️ Clear All"):
+        clear_all()
 
 # --- Inputs Section ---
 instrument_list = list(INSTRUMENTS.keys())
@@ -127,15 +144,16 @@ st.subheader("Trade Details")
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     instrument = st.selectbox("Instrument", options=instrument_list, index=0)
-    close_price = st.number_input("Close Price", value=24845.75, format="%.2f")
+    close_price = st.number_input("Close Price", format="%.2f", key="close_price")
 with c2:
-    qty = st.number_input("Quantity (Qty)", min_value=1, value=st.session_state.total_qty, step=1)
-    high_low = st.number_input("High/Low", value=24848.00, format="%.2f")
+    # Changed min_value to 0 so the clear button can reset it to 0
+    qty = st.number_input("Quantity (Qty)", min_value=0, step=1, key="qty")
+    high_low = st.number_input("High/Low", format="%.2f", key="high_low")
 with c3:
-    fill_price = st.number_input("Fill Price (Avg)", value=st.session_state.avg_fill_price, format="%.2f")
-    balance_before = st.number_input("Balance Before", value=0.00, format="%.2f")
+    fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
+    balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
-    mll = st.number_input("MLL", value=-2000.00, format="%.2f")
+    mll = st.number_input("MLL", format="%.2f", key="mll")
 
 # --- Calculations Section ---
 tick_value = INSTRUMENTS[instrument]["Tick Value"]
@@ -161,11 +179,6 @@ metric_col2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 metric_col3.metric("Difference", f"${difference:,.2f}")
 
 if is_invalid_violation:
-    # Changed from st.success to st.error to make "Invalid" red
     st.error(f"**Status:** {status} - The loss did not exceed the MLL distance.")
 else:
-    # Changed from st.error to st.success to make "Valid Violation" green
     st.success(f"**Status:** {status} - The MLL limit was breached!")
-
-
-

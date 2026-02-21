@@ -161,8 +161,11 @@ metric_col2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 metric_col3.metric("Difference", f"${difference:,.2f}")
 
 if is_invalid_violation:
-    st.success(f"**Status:** {status} - The loss did not exceed the MLL distance.")
+    # Changed from st.success to st.error to make "Invalid" red
+    st.error(f"**Status:** {status} - The loss did not exceed the MLL distance.")
 else:
-    st.error(f"**Status:** {status} - The MLL limit was breached!")
+    # Changed from st.error to st.success to make "Valid Violation" green
+    st.success(f"**Status:** {status} - The MLL limit was breached!")
+
 
 

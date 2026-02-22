@@ -37,7 +37,6 @@ if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_
     st.session_state.force_refresh = False
 
 # --- Widget Session State Initialization ---
-# We use keys to set default values, which allows the Clear button to overwrite them
 if "qty" not in st.session_state: st.session_state.qty = 2
 if "fill_price" not in st.session_state: st.session_state.fill_price = 24798.25
 if "close_price" not in st.session_state: st.session_state.close_price = 24845.75
@@ -89,15 +88,15 @@ def manage_instruments_dialog():
 
 @st.dialog("Calculate Weighted Average Fill")
 def weighted_average_dialog():
-    st.markdown("Enter your multiple fills below.")
+    st.markdown("Enter your multiple fills below. (Use negative Qty for shorts).")
     edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
     if st.button("Calculate & Apply", type="primary"):
-        valid_fills = edited_df[(edited_df["Qty"] > 0) & (edited_df["Price"] > 0)]
+        # Changed to allow negative quantities (!= 0 instead of > 0)
+        valid_fills = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
         if not valid_fills.empty:
             total_q = int(valid_fills["Qty"].sum())
             weighted_p = float((valid_fills["Qty"] * valid_fills["Price"]).sum() / total_q)
             
-            # Save results directly to the keys used by the input boxes
             st.session_state.qty = total_q
             st.session_state.fill_price = weighted_p
             st.session_state.fill_data = edited_df 
@@ -146,8 +145,8 @@ with c1:
     instrument = st.selectbox("Instrument", options=instrument_list, index=0)
     close_price = st.number_input("Close Price", format="%.2f", key="close_price")
 with c2:
-    # Changed min_value to 0 so the clear button can reset it to 0
-    qty = st.number_input("Quantity (Qty)", min_value=0, step=1, key="qty")
+    # Removed min_value so it can naturally go negative
+    qty = st.number_input("Quantity (Qty)", step=1, key="qty")
     high_low = st.number_input("High/Low", format="%.2f", key="high_low")
 with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
@@ -159,8 +158,17 @@ with c4:
 tick_value = INSTRUMENTS[instrument]["Tick Value"]
 ticks_per_pt = INSTRUMENTS[instrument]["Ticks per Pt"]
 
+# Directional Logic display (Optional, but helpful for UI)
+if qty > 0:
+    direction = "Long"
+elif qty < 0:
+    direction = "Short"
+else:
+    direction = "Flat"
+
 price_diff = abs(high_low - fill_price)
-mae = - (price_diff * tick_value * ticks_per_pt * qty)
+# Added abs(qty) here so the MAE doesn't invert and turn positive when shorting
+mae = - (price_diff * tick_value * ticks_per_pt * abs(qty))
 
 dist_2_mll = balance_before - mll
 difference = dist_2_mll + mae  
@@ -171,7 +179,7 @@ status = "Invalid" if is_invalid_violation else "Valid Violation"
 # --- Output Section ---
 st.subheader("Calculation Results")
 
-st.write(f"**Calculated Tick Value:** {tick_value:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Calculated Ticks per Pt:** {ticks_per_pt:,.2f}")
+st.write(f"**Calculated Tick Value:** {tick_value:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Calculated Ticks per Pt:** {ticks_per_pt:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Direction:** {direction}")
 
 metric_col1, metric_col2, metric_col3 = st.columns(3)
 metric_col1.metric("MAE", f"${mae:,.2f}")

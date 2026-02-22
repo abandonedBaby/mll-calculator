@@ -141,13 +141,24 @@ if not instrument_list:
     INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.0}
 
 st.subheader("Trade Details")
+
+# Determine Dynamic High/Low Label based on Quantity
+current_qty = st.session_state.qty
+if current_qty > 0:
+    hl_label = "📉 Low (Long Adverse Excursion)"
+elif current_qty < 0:
+    hl_label = "📈 High (Short Adverse Excursion)"
+else:
+    hl_label = "High/Low"
+
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     instrument = st.selectbox("Instrument", options=instrument_list, index=0)
     close_price = st.number_input("Close Price", format="%.2f", key="close_price")
 with c2:
     qty = st.number_input("Quantity (Qty)", step=1, key="qty")
-    high_low = st.number_input("High/Low", format="%.2f", key="high_low")
+    # Using the dynamically generated label here!
+    high_low = st.number_input(hl_label, format="%.2f", key="high_low")
 with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
@@ -193,13 +204,13 @@ else:
 # --- Copy to Clipboard Summary ---
 st.divider()
 
-# Format the clean text summary
+# Adjusted the Summary Text to show whether High or Low was used
 summary_text = f"""--- MLL Checker Summary ---
 Instrument: {instrument} ({direction})
 Quantity: {qty}
 Fill Price: {fill_price:.2f}
 Close Price: {close_price:.2f}
-High/Low: {high_low:.2f}
+{hl_label.split(' (')[0].replace('📉 ', '').replace('📈 ', '')}: {high_low:.2f}
 Balance Before: {balance_before:.2f}
 MLL: {mll:.2f}
 Violation Time: {violation_time}

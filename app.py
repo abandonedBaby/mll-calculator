@@ -142,14 +142,20 @@ if not instrument_list:
 
 st.subheader("Trade Details")
 
-# Determine Dynamic High/Low Label based on Quantity
+# Determine Dynamic High/Low Label and Tooltip based on Quantity
 current_qty = st.session_state.qty
 if current_qty > 0:
     hl_label = "📉 Low"
+    hl_help = "Long Adverse Excursion: Enter the lowest price reached during the trade."
+    clean_label = "Low"
 elif current_qty < 0:
     hl_label = "📈 High"
+    hl_help = "Short Adverse Excursion: Enter the highest price reached during the trade."
+    clean_label = "High"
 else:
     hl_label = "High/Low"
+    hl_help = "Enter the adverse excursion price (Lowest price for Longs, Highest price for Shorts)."
+    clean_label = "High/Low"
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -157,8 +163,8 @@ with c1:
     close_price = st.number_input("Close Price", format="%.2f", key="close_price")
 with c2:
     qty = st.number_input("Quantity (Qty)", step=1, key="qty")
-    # Using the dynamically generated label here!
-    high_low = st.number_input(hl_label, format="%.2f", key="high_low")
+    # Added the `help` parameter here to display the tooltip!
+    high_low = st.number_input(hl_label, format="%.2f", key="high_low", help=hl_help)
 with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
@@ -204,13 +210,13 @@ else:
 # --- Copy to Clipboard Summary ---
 st.divider()
 
-# Adjusted the Summary Text to show whether High or Low was used
+# Adjusted the Summary Text to use our clean label without emojis
 summary_text = f"""--- MLL Checker Summary ---
 Instrument: {instrument} ({direction})
 Quantity: {qty}
 Fill Price: {fill_price:.2f}
 Close Price: {close_price:.2f}
-{hl_label.split(' (')[0].replace('📉 ', '').replace('📈 ', '')}: {high_low:.2f}
+{clean_label}: {high_low:.2f}
 Balance Before: {balance_before:.2f}
 MLL: {mll:.2f}
 Violation Time: {violation_time}
@@ -225,4 +231,3 @@ Status: {status}
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner of the box below and click the 'Copy' icon to copy this data.")
     st.code(summary_text, language="text")
-

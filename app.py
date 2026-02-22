@@ -163,13 +163,13 @@ with c1:
     close_price = st.number_input("Close Price", format="%.2f", key="close_price")
 with c2:
     qty = st.number_input("Quantity (Qty)", step=1, key="qty")
-    # Added the `help` parameter here to display the tooltip!
     high_low = st.number_input(hl_label, format="%.2f", key="high_low", help=hl_help)
 with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
-    mll = st.number_input("MLL", format="%.2f", key="mll")
+    # Added the help tooltip to MLL
+    mll = st.number_input("MLL", format="%.2f", key="mll", help="Maximum Loss Limit or Personal Daily Loss Limit")
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
 
 # --- Calculations Section ---
@@ -198,7 +198,8 @@ st.subheader("Calculation Results")
 st.write(f"**Calculated Tick Value:** {tick_value:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Calculated Ticks per Pt:** {ticks_per_pt:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Direction:** {direction}")
 
 metric_col1, metric_col2, metric_col3 = st.columns(3)
-metric_col1.metric("MAE", f"${mae:,.2f}")
+# Added the help tooltip to the MAE Metric display
+metric_col1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
 metric_col2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 metric_col3.metric("Difference", f"${difference:,.2f}")
 
@@ -210,7 +211,6 @@ else:
 # --- Copy to Clipboard Summary ---
 st.divider()
 
-# Adjusted the Summary Text to use our clean label without emojis
 summary_text = f"""--- MLL Checker Summary ---
 Instrument: {instrument} ({direction})
 Quantity: {qty}

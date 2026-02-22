@@ -43,6 +43,7 @@ if "close_price" not in st.session_state: st.session_state.close_price = 24845.7
 if "high_low" not in st.session_state: st.session_state.high_low = 24848.00
 if "balance_before" not in st.session_state: st.session_state.balance_before = 0.00
 if "mll" not in st.session_state: st.session_state.mll = -2000.00
+if "violation_time" not in st.session_state: st.session_state.violation_time = "" # New Field
 if "fill_data" not in st.session_state: 
     st.session_state.fill_data = pd.DataFrame([{"Qty": 1, "Price": 24798.25}, {"Qty": 1, "Price": 24800.00}])
 
@@ -61,13 +62,14 @@ for _, row in st.session_state.instruments_df.iterrows():
 
 # --- Actions & Dialogs ---
 def clear_all():
-    """Resets all input fields to 0"""
+    """Resets all input fields to 0 or blank"""
     st.session_state.qty = 0
     st.session_state.fill_price = 0.00
     st.session_state.close_price = 0.00
     st.session_state.high_low = 0.00
     st.session_state.balance_before = 0.00
     st.session_state.mll = 0.00
+    st.session_state.violation_time = "" # Clears the new field
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
 
 @st.dialog("⚙️ Manage Instruments")
@@ -91,7 +93,6 @@ def weighted_average_dialog():
     st.markdown("Enter your multiple fills below. (Use negative Qty for shorts).")
     edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
     if st.button("Calculate & Apply", type="primary"):
-        # Changed to allow negative quantities (!= 0 instead of > 0)
         valid_fills = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
         if not valid_fills.empty:
             total_q = int(valid_fills["Qty"].sum())
@@ -145,7 +146,6 @@ with c1:
     instrument = st.selectbox("Instrument", options=instrument_list, index=0)
     close_price = st.number_input("Close Price", format="%.2f", key="close_price")
 with c2:
-    # Removed min_value so it can naturally go negative
     qty = st.number_input("Quantity (Qty)", step=1, key="qty")
     high_low = st.number_input("High/Low", format="%.2f", key="high_low")
 with c3:
@@ -153,12 +153,13 @@ with c3:
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
     mll = st.number_input("MLL", format="%.2f", key="mll")
+    # Added the new Violation Time text input
+    violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
 
 # --- Calculations Section ---
 tick_value = INSTRUMENTS[instrument]["Tick Value"]
 ticks_per_pt = INSTRUMENTS[instrument]["Ticks per Pt"]
 
-# Directional Logic display (Optional, but helpful for UI)
 if qty > 0:
     direction = "Long"
 elif qty < 0:
@@ -167,7 +168,6 @@ else:
     direction = "Flat"
 
 price_diff = abs(high_low - fill_price)
-# Added abs(qty) here so the MAE doesn't invert and turn positive when shorting
 mae = - (price_diff * tick_value * ticks_per_pt * abs(qty))
 
 dist_2_mll = balance_before - mll

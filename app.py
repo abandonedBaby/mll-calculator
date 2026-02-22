@@ -145,9 +145,9 @@ st.subheader("Trade Details")
 # Determine Dynamic High/Low Label based on Quantity
 current_qty = st.session_state.qty
 if current_qty > 0:
-    hl_label = "📉 Low (Long Adverse Excursion)"
+    hl_label = "📉 Low"
 elif current_qty < 0:
-    hl_label = "📈 High (Short Adverse Excursion)"
+    hl_label = "📈 High"
 else:
     hl_label = "High/Low"
 
@@ -225,3 +225,4 @@ Status: {status}
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner of the box below and click the 'Copy' icon to copy this data.")
     st.code(summary_text, language="text")
+

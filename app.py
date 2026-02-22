@@ -43,7 +43,7 @@ if "close_price" not in st.session_state: st.session_state.close_price = 24845.7
 if "high_low" not in st.session_state: st.session_state.high_low = 24848.00
 if "balance_before" not in st.session_state: st.session_state.balance_before = 0.00
 if "mll" not in st.session_state: st.session_state.mll = -2000.00
-if "violation_time" not in st.session_state: st.session_state.violation_time = "" # New Field
+if "violation_time" not in st.session_state: st.session_state.violation_time = ""
 if "fill_data" not in st.session_state: 
     st.session_state.fill_data = pd.DataFrame([{"Qty": 1, "Price": 24798.25}, {"Qty": 1, "Price": 24800.00}])
 
@@ -69,7 +69,7 @@ def clear_all():
     st.session_state.high_low = 0.00
     st.session_state.balance_before = 0.00
     st.session_state.mll = 0.00
-    st.session_state.violation_time = "" # Clears the new field
+    st.session_state.violation_time = ""
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
 
 @st.dialog("⚙️ Manage Instruments")
@@ -153,7 +153,6 @@ with c3:
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
     mll = st.number_input("MLL", format="%.2f", key="mll")
-    # Added the new Violation Time text input
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
 
 # --- Calculations Section ---
@@ -190,3 +189,28 @@ if is_invalid_violation:
     st.error(f"**Status:** {status} - The loss did not exceed the MLL distance.")
 else:
     st.success(f"**Status:** {status} - The MLL limit was breached!")
+
+# --- Copy to Clipboard Summary ---
+st.divider()
+
+# Format the clean text summary
+summary_text = f"""--- MLL Checker Summary ---
+Instrument: {instrument} ({direction})
+Quantity: {qty}
+Fill Price: {fill_price:.2f}
+Close Price: {close_price:.2f}
+High/Low: {high_low:.2f}
+Balance Before: {balance_before:.2f}
+MLL: {mll:.2f}
+Violation Time: {violation_time}
+
+--- Results ---
+MAE: ${mae:.2f}
+Distance to MLL: ${dist_2_mll:.2f}
+Difference: ${difference:.2f}
+Status: {status}
+"""
+
+with st.expander("📄 View / Copy Text Summary"):
+    st.caption("Hover over the top right corner of the box below and click the 'Copy' icon to copy this data.")
+    st.code(summary_text, language="text")

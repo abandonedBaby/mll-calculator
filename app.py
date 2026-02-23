@@ -1,16 +1,18 @@
 import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
+import urllib.request
+import xml.etree.ElementTree as ET
+import datetime
 
 st.set_page_config(page_title="Invalid MLL Violation Checker", layout="wide")
 
-# --- 1. Constants & Defaults (DRY Principle) ---
+# --- 1. Constants & Defaults ---
 DEFAULT_INSTRUMENTS = [
     {"Instrument": "NQ", "Value per point": 20.0, "Tick Size": 0.25},
     {"Instrument": "ES", "Value per point": 50.0, "Tick Size": 0.25},
 ]
 
-# Storing default values in a dictionary saves us from writing 10 different "if" statements
 STATE_DEFAULTS = {
     "qty": 2, "fill_price": 24798.25, "close_price": 24845.75,
     "high_low": 24848.00, "balance_before": 0.00, "mll": -2000.00,
@@ -18,7 +20,6 @@ STATE_DEFAULTS = {
 }
 
 # --- 2. Session State Management ---
-# Loop through the dictionary to set up memory instantly
 for key, val in STATE_DEFAULTS.items():
     if key not in st.session_state: st.session_state[key] = val
 
@@ -26,14 +27,12 @@ if "fill_data" not in st.session_state:
     st.session_state.fill_data = pd.DataFrame([{"Qty": 1, "Price": 24798.25}, {"Qty": 1, "Price": 24800.00}])
 
 def clear_all():
-    """Loops through defaults to instantly wipe the board clean"""
     for key in STATE_DEFAULTS.keys():
         st.session_state[key] = "" if key == "violation_time" else 0.00
     st.session_state.qty = 0
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
 
 # --- 3. Optimized Google Sheets Connection ---
-# We moved the connection INSIDE the if-statement so it only runs once, eliminating lag!
 if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_refresh', True):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -44,20 +43,51 @@ if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_
         st.sidebar.error(f"⚠️ Sheets Error: {e}")
     st.session_state.force_refresh = False
 
-# Build Instrument Dictionary cleanly
 INSTRUMENTS = {}
 for _, row in st.session_state.instruments_df.dropna(subset=["Instrument"]).iterrows():
     name = str(row["Instrument"]).strip()
     if not name: continue
-    
     val_per_pt, tick_size = float(row.get("Value per point", 0)), float(row.get("Tick Size", 0))
     INSTRUMENTS[name] = {"Tick Value": val_per_pt * tick_size, "Ticks per Pt": 1 / tick_size if tick_size else 0}
 
 if not INSTRUMENTS: INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.0}
 
-# --- 4. Helper Functions ---
+# --- 4. Helper Functions (News Fetcher & Data Parser) ---
+@st.cache_data(ttl="1h")
+def fetch_usd_high_impact_news():
+    """Fetches and caches Forex Factory calendar, filters for High Impact USD events."""
+    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    events = []
+    
+    try:
+        with urllib.request.urlopen(req) as response:
+            xml_data = response.read()
+            
+        root = ET.fromstring(xml_data)
+        for event in root.findall('event'):
+            country = event.find('country').text if event.find('country') is not None else ""
+            impact = event.find('impact').text if event.find('impact') is not None else ""
+            
+            if country == 'USD' and impact == 'High':
+                title = event.find('title').text
+                date_str = event.find('date').text
+                time_str = event.find('time').text
+                
+                # Ignore 'All Day' or 'Tentative' events as they have no fixed minute to check against
+                if time_str and 'All Day' not in time_str and 'Tentative' not in time_str:
+                    try:
+                        dt_str = f"{date_str} {time_str}"
+                        # Forex factory format is usually '02-23-2026 8:30am'
+                        dt_obj = pd.to_datetime(dt_str, format='%m-%d-%Y %I:%M%p')
+                        events.append({'title': title, 'Event_Time': dt_obj})
+                    except Exception:
+                        pass
+        return pd.DataFrame(events)
+    except Exception as e:
+        return pd.DataFrame() # Fail silently if the site is down
+
 def parse_pasted_data(text):
-    """Abstracts the parsing logic to keep the UI clean"""
     rows = []
     for line in text.strip().split('\n'):
         cols = line.split('\t')
@@ -73,7 +103,6 @@ def parse_pasted_data(text):
 def manage_instruments_dialog():
     st.markdown("Add, edit, or delete instruments. Changes sync to Google Sheets.")
     edited_df = st.data_editor(st.session_state.instruments_df, num_rows="dynamic", use_container_width=True, hide_index=True)
-    
     if st.button("Save to Cloud", type="primary"):
         cleaned_df = edited_df.dropna(subset=["Instrument"])
         cleaned_df = cleaned_df[cleaned_df["Instrument"].astype(str).str.strip() != ""]
@@ -88,8 +117,8 @@ def manage_instruments_dialog():
 @st.dialog("Calculate Weighted Average Fill")
 def weighted_average_dialog():
     st.markdown("Enter multiple fills manually, or **paste raw tab-delimited data**.")
-    
     pasted_text = st.text_area("📋 Quick Paste", placeholder="Paste rows here...", height=100)
+    
     if st.button("🚀 Extract & Apply", type="primary"):
         parsed_rows = parse_pasted_data(pasted_text)
         if parsed_rows:
@@ -106,6 +135,7 @@ def weighted_average_dialog():
     st.divider()
     st.caption("Or edit rows manually:")
     edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
+    
     if st.button("Calculate & Apply Manual Edits"):
         valid = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
         if not valid.empty:
@@ -144,7 +174,6 @@ with btn_col3:
 st.subheader("Trade Details")
 curr_qty = st.session_state.qty
 
-# Dynamic Label Logic
 hl_label, hl_help, clean_label = ("High/Low", "Enter adverse excursion price.", "High/Low")
 if curr_qty > 0: hl_label, hl_help, clean_label = ("📉 Low", "Long Adverse Excursion: Lowest price.", "Low")
 elif curr_qty < 0: hl_label, hl_help, clean_label = ("📈 High", "Short Adverse Excursion: Highest price.", "High")
@@ -183,7 +212,30 @@ mc3.metric("Difference", f"${difference:,.2f}")
 if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
 else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
-# --- 9. Clipboard Summary ---
+# --- 9. Economic Event Checking ---
+news_warning = ""
+if violation_time.strip():
+    try:
+        # Attempt to convert user input to datetime
+        vt_dt = pd.to_datetime(violation_time.strip())
+        
+        # Check against the fetched news data
+        news_df = fetch_usd_high_impact_news()
+        if not news_df.empty:
+            for _, row in news_df.iterrows():
+                event_time = row['Event_Time']
+                
+                # Check if violation time is within 60 seconds of the event time
+                time_diff = abs((vt_dt - event_time).total_seconds())
+                if time_diff <= 60:
+                    news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of a major economic event: **{row['title']}** ({event_time.strftime('%I:%M %p EST')})"
+                    st.warning(news_warning, icon="🚨")
+                    break
+    except Exception:
+        # If the user is currently typing the date or typed it wrong, fail silently until valid
+        pass
+
+# --- 10. Clipboard Summary ---
 st.divider()
 summary_text = f"""--- MLL Checker Summary ---
 Instrument: {instrument} ({direction})
@@ -201,6 +253,11 @@ Distance to MLL: ${dist_2_mll:.2f}
 Difference: ${difference:.2f}
 Status: {"Invalid" if is_invalid else "Valid Violation"}
 """
+
+# Append the warning to the summary if it triggered
+if news_warning:
+    summary_text += f"\n--- Flags ---\n{news_warning}"
+
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")

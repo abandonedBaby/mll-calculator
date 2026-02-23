@@ -118,10 +118,10 @@ def sync_news_archive():
             
             try:
                 conn.update(worksheet="News_Archive", data=upload_df)
-                st.toast("✅ News Archive successfully synced to Google Sheets!")
+                # DELETED st.toast("✅ News Archive successfully synced to Google Sheets!")
             except Exception as e:
                 # No more silent failing! If it breaks, it will print the exact error on your screen.
-                st.error(f"⚠️ Google Sheets Write Error: {e}")
+                # st.error(f"⚠️ Google Sheets Write Error: {e}")
 
     # Rehydrate the unified data back into usable Timezone-Aware Datetimes for the app to use
     if not archive_df.empty and 'Event_Time' in archive_df.columns:
@@ -320,6 +320,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

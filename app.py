@@ -281,15 +281,6 @@ if violation_time.strip():
     except Exception:
         pass
 
-# Debug/Viewing tool for the News Archive
-with st.expander("📅 View Saved News Archive"):
-    if not news_df.empty:
-        display_df = news_df.copy()
-        display_df['Event_Time_CST'] = display_df['Event_Time'].dt.tz_convert('US/Central').dt.strftime('%Y-%m-%d %I:%M %p CST')
-        st.dataframe(display_df[['title', 'Event_Time_CST']], hide_index=True, use_container_width=True)
-    else:
-        st.write("No events found in the archive yet.")
-
 # --- 10. Clipboard Summary ---
 st.divider()
 summary_text = f"""--- MLL Checker Summary ---
@@ -315,6 +306,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

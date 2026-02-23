@@ -149,7 +149,14 @@ def weighted_average_dialog():
 with st.sidebar:
     st.header("🔐 Admin Access")
     is_admin = (st.text_input("Password", type="password") == st.secrets.get("admin_password", "admin123"))
-    if is_admin: st.success("Admin unlocked!")
+    if is_admin: 
+        st.success("Admin unlocked!")
+        if st.button("🧹 Clear News Cache"):
+            st.cache_data.clear()
+            st.success("Cache cleared! The app will pull fresh news data.")
+
+# Renamed the Title!
+st.title("📊 Trade Violation Checker")
 
 # Renamed the Title!
 st.title("📊 Trade Violation Checker")
@@ -265,3 +272,4 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+

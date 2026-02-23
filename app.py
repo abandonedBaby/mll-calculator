@@ -33,14 +33,16 @@ def clear_all():
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
 
 # --- 3. Optimized Google Sheets Connection ---
+# Define connection globally so we can use it for both tabs
+conn = st.connection("gsheets", type=GSheetsConnection)
+
 if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_refresh', True):
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="Instruments", ttl="0m").dropna(how="all")
         st.session_state.instruments_df = df if not df.empty else pd.DataFrame(DEFAULT_INSTRUMENTS)
     except Exception as e:
         st.session_state.instruments_df = pd.DataFrame(DEFAULT_INSTRUMENTS)
-        st.sidebar.error(f"⚠️ Sheets Error: {e}")
+        st.sidebar.error(f"⚠️ Instruments Sheets Error: {e}")
     st.session_state.force_refresh = False
 
 INSTRUMENTS = {}
@@ -52,10 +54,10 @@ for _, row in st.session_state.instruments_df.dropna(subset=["Instrument"]).iter
 
 if not INSTRUMENTS: INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.0}
 
-# --- 4. Helper Functions (News Fetcher & Data Parser) ---
+# --- 4. Helper Functions (News Fetcher & Auto-Archive) ---
 @st.cache_data(ttl="1h")
-def fetch_usd_high_impact_news():
-    """Fetches Forex Factory calendar, filters for High Impact USD, and makes it US/Eastern timezone aware."""
+def fetch_live_news():
+    """Fetches the current MONTH of Forex Factory high impact USD events."""
     url = "https://nfs.faireconomy.media/ff_calendar_thismonth.xml"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     events = []
@@ -63,7 +65,6 @@ def fetch_usd_high_impact_news():
     try:
         with urllib.request.urlopen(req) as response:
             xml_data = response.read()
-            
         root = ET.fromstring(xml_data)
         for event in root.findall('event'):
             country = event.find('country').text if event.find('country') is not None else ""
@@ -77,14 +78,56 @@ def fetch_usd_high_impact_news():
                 if time_str and 'All Day' not in time_str and 'Tentative' not in time_str:
                     try:
                         dt_str = f"{date_str} {time_str}"
-                        # Removed the strict format parameter so pandas can automatically handle missing leading zeros!
                         dt_obj = pd.to_datetime(dt_str).tz_localize('US/Eastern')
                         events.append({'title': title, 'Event_Time': dt_obj})
-                    except Exception as e:
-                        print(f"Failed to parse date: {dt_str} - {e}")
+                    except Exception:
+                        pass
         return pd.DataFrame(events)
-    except Exception as e:
+    except Exception:
         return pd.DataFrame() 
+
+def sync_news_archive():
+    """Reads GSheets Archive, fetches new events, appends if missing, and returns the unified list."""
+    live_df = fetch_live_news()
+    
+    try:
+        archive_df = conn.read(worksheet="News_Archive", ttl="0m").dropna(how="all")
+    except Exception:
+        archive_df = pd.DataFrame(columns=["title", "Event_Time"])
+
+    if not live_df.empty:
+        live_df['Event_Time_Str'] = live_df['Event_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Check what we already have in the Google Sheet
+        if not archive_df.empty and 'Event_Time' in archive_df.columns:
+            existing_times = archive_df['Event_Time'].astype(str).tolist()
+            new_rows = live_df[~live_df['Event_Time_Str'].isin(existing_times)]
+        else:
+            new_rows = live_df
+            
+        # Append new events to the Google Sheet!
+        if not new_rows.empty:
+            append_df = new_rows[['title', 'Event_Time_Str']].rename(columns={'Event_Time_Str': 'Event_Time'})
+            archive_df = pd.concat([archive_df, append_df], ignore_index=True)
+            archive_df = archive_df.drop_duplicates(subset=['Event_Time', 'title'])
+            try:
+                conn.update(worksheet="News_Archive", data=archive_df)
+            except Exception:
+                pass # Silently fail if sheet config is wrong
+
+    # Rehydrate the unified data back into usable Timezone-Aware Datetimes
+    if not archive_df.empty and 'Event_Time' in archive_df.columns:
+        archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time'])
+        if archive_df['Event_Time'].dt.tz is None:
+            archive_df['Event_Time'] = archive_df['Event_Time'].dt.tz_localize('US/Eastern')
+        return archive_df.sort_values(by='Event_Time', ascending=False).reset_index(drop=True)
+        
+    return pd.DataFrame()
+
+# Load News into Session State to prevent lag!
+if "news_archive_df" not in st.session_state or getattr(st.session_state, 'force_news_refresh', True):
+    st.session_state.news_archive_df = sync_news_archive()
+    st.session_state.force_news_refresh = False
 
 def parse_pasted_data(text):
     rows = []
@@ -106,7 +149,6 @@ def manage_instruments_dialog():
         cleaned_df = edited_df.dropna(subset=["Instrument"])
         cleaned_df = cleaned_df[cleaned_df["Instrument"].astype(str).str.strip() != ""]
         try:
-            conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(worksheet="Instruments", data=cleaned_df)
             st.session_state.force_refresh = True 
             st.rerun()
@@ -151,14 +193,11 @@ with st.sidebar:
     is_admin = (st.text_input("Password", type="password") == st.secrets.get("admin_password", "admin123"))
     if is_admin: 
         st.success("Admin unlocked!")
-        if st.button("🧹 Clear News Cache"):
+        if st.button("🧹 Force Sync News Archive"):
             st.cache_data.clear()
-            st.success("Cache cleared! The app will pull fresh news data.")
+            st.session_state.force_news_refresh = True
+            st.rerun()
 
-# Renamed the Title!
-st.title("📊 Trade Violation Checker")
-
-# Renamed the Title!
 st.title("📊 Trade Violation Checker")
 st.markdown("""
     <style>
@@ -196,7 +235,6 @@ with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
-    # Changed Label to "Min Balance - MLL"
     mll = st.number_input("Min Balance - MLL", format="%.2f", key="mll", help="Maximum Loss Limit")
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
 
@@ -222,44 +260,35 @@ else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
 # --- 9. Economic Event Checking (Timezone Aware!) ---
 news_warning = ""
-news_df = fetch_usd_high_impact_news()
+news_df = st.session_state.news_archive_df
 
 if violation_time.strip():
     try:
-        # Parse the user's input and immediately lock it to US/Central
         vt_dt = pd.to_datetime(violation_time.strip()).tz_localize('US/Central')
         
-        # Check against the fetched news data
         if not news_df.empty:
             for _, row in news_df.iterrows():
                 event_time = row['Event_Time']
-                
-                # Check if violation time is within 60 seconds of the event time
                 time_diff = abs((vt_dt - event_time).total_seconds())
                 if time_diff <= 60:
-                    # Convert the event time to Central Time just so the display matches the user's local input
                     event_time_cst = event_time.tz_convert('US/Central')
                     news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of a major economic event: **{row['title']}** ({event_time_cst.strftime('%I:%M %p CST')})"
                     st.warning(news_warning, icon="🚨")
                     break
     except Exception:
-        # Fails silently if the user is typing an incomplete date
         pass
 
-# Debug/Viewing tool for the News Feed
-with st.expander("📅 View Current Week's USD High Impact News"):
+# Debug/Viewing tool for the News Archive
+with st.expander("📅 View Saved News Archive"):
     if not news_df.empty:
-        # Create a display copy converted to CST for easy reading
         display_df = news_df.copy()
         display_df['Event_Time_CST'] = display_df['Event_Time'].dt.tz_convert('US/Central').dt.strftime('%Y-%m-%d %I:%M %p CST')
         st.dataframe(display_df[['title', 'Event_Time_CST']], hide_index=True, use_container_width=True)
     else:
-        st.write("No High Impact USD events found for this week, or feed is currently unavailable.")
+        st.write("No events found in the archive yet.")
 
 # --- 10. Clipboard Summary ---
 st.divider()
-
-# Updated label in the summary text
 summary_text = f"""--- MLL Checker Summary ---
 Instrument: {instrument} ({direction})
 Quantity: {qty}
@@ -283,6 +312,3 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
-
-
-

@@ -98,24 +98,32 @@ def sync_news_archive():
     if not live_df.empty:
         live_df['Event_Time_Str'] = live_df['Event_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
-        # Check what we already have in the Google Sheet
         if not archive_df.empty and 'Event_Time' in archive_df.columns:
             existing_times = archive_df['Event_Time'].astype(str).tolist()
             new_rows = live_df[~live_df['Event_Time_Str'].isin(existing_times)]
         else:
             new_rows = live_df
             
-        # Append new events to the Google Sheet!
         if not new_rows.empty:
             append_df = new_rows[['title', 'Event_Time_Str']].rename(columns={'Event_Time_Str': 'Event_Time'})
             archive_df = pd.concat([archive_df, append_df], ignore_index=True)
             archive_df = archive_df.drop_duplicates(subset=['Event_Time', 'title'])
+            
+            # --- THE FIX ---
+            # Google Sheets hates Python Data/Time objects. 
+            # We force a copy of the dataframe to be 100% plain text before sending it to the cloud.
+            upload_df = archive_df.copy()
+            upload_df['title'] = upload_df['title'].astype(str)
+            upload_df['Event_Time'] = upload_df['Event_Time'].astype(str)
+            
             try:
-                conn.update(worksheet="News_Archive", data=archive_df)
-            except Exception:
-                pass # Silently fail if sheet config is wrong
+                conn.update(worksheet="News_Archive", data=upload_df)
+                st.toast("✅ News Archive successfully synced to Google Sheets!")
+            except Exception as e:
+                # No more silent failing! If it breaks, it will print the exact error on your screen.
+                st.error(f"⚠️ Google Sheets Write Error: {e}")
 
-    # Rehydrate the unified data back into usable Timezone-Aware Datetimes
+    # Rehydrate the unified data back into usable Timezone-Aware Datetimes for the app to use
     if not archive_df.empty and 'Event_Time' in archive_df.columns:
         archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time'])
         if archive_df['Event_Time'].dt.tz is None:
@@ -312,3 +320,4 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+

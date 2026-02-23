@@ -57,7 +57,7 @@ if not INSTRUMENTS: INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.
 # --- 4. Helper Functions (News Fetcher & Auto-Archive) ---
 @st.cache_data(ttl="1h")
 def fetch_live_news():
-    """Fetches the current MONTH of Forex Factory high impact USD events."""
+    """Fetches the current WEEK of Forex Factory high impact USD events."""
     url = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     events = []
@@ -320,5 +320,6 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 

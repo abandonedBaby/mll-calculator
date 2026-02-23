@@ -56,7 +56,7 @@ if not INSTRUMENTS: INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.
 @st.cache_data(ttl="1h")
 def fetch_usd_high_impact_news():
     """Fetches Forex Factory calendar, filters for High Impact USD, and makes it US/Eastern timezone aware."""
-    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
+    url = "https://nfs.faireconomy.media/ff_calendar_thismonth.xml"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     events = []
     
@@ -283,5 +283,6 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 

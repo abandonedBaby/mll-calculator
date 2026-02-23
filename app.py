@@ -5,7 +5,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import datetime
 
-st.set_page_config(page_title="Invalid MLL Violation Checker", layout="wide")
+st.set_page_config(page_title="Trade Violation Checker", layout="wide")
 
 # --- 1. Constants & Defaults ---
 DEFAULT_INSTRUMENTS = [
@@ -55,7 +55,7 @@ if not INSTRUMENTS: INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.
 # --- 4. Helper Functions (News Fetcher & Data Parser) ---
 @st.cache_data(ttl="1h")
 def fetch_usd_high_impact_news():
-    """Fetches and caches Forex Factory calendar, filters for High Impact USD events."""
+    """Fetches Forex Factory calendar, filters for High Impact USD, and makes it US/Eastern timezone aware."""
     url = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     events = []
@@ -74,18 +74,17 @@ def fetch_usd_high_impact_news():
                 date_str = event.find('date').text
                 time_str = event.find('time').text
                 
-                # Ignore 'All Day' or 'Tentative' events as they have no fixed minute to check against
                 if time_str and 'All Day' not in time_str and 'Tentative' not in time_str:
                     try:
                         dt_str = f"{date_str} {time_str}"
-                        # Forex factory format is usually '02-23-2026 8:30am'
-                        dt_obj = pd.to_datetime(dt_str, format='%m-%d-%Y %I:%M%p')
+                        # Parse the time and explicitly set it as US/Eastern (Forex Factory default)
+                        dt_obj = pd.to_datetime(dt_str, format='%m-%d-%Y %I:%M%p').tz_localize('US/Eastern')
                         events.append({'title': title, 'Event_Time': dt_obj})
                     except Exception:
                         pass
         return pd.DataFrame(events)
     except Exception as e:
-        return pd.DataFrame() # Fail silently if the site is down
+        return pd.DataFrame() 
 
 def parse_pasted_data(text):
     rows = []
@@ -152,7 +151,8 @@ with st.sidebar:
     is_admin = (st.text_input("Password", type="password") == st.secrets.get("admin_password", "admin123"))
     if is_admin: st.success("Admin unlocked!")
 
-st.title("📊 Invalid MLL Violation Checker")
+# Renamed the Title!
+st.title("📊 Trade Violation Checker")
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 1rem; }
@@ -189,7 +189,8 @@ with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
-    mll = st.number_input("MLL", format="%.2f", key="mll", help="Maximum Loss Limit")
+    # Changed Label to "Min Balance - MLL"
+    mll = st.number_input("Min Balance - MLL", format="%.2f", key="mll", help="Maximum Loss Limit")
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
 
 # --- 8. Math & Output ---
@@ -212,12 +213,12 @@ mc3.metric("Difference", f"${difference:,.2f}")
 if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
 else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
-# --- 9. Economic Event Checking ---
+# --- 9. Economic Event Checking (Timezone Aware!) ---
 news_warning = ""
 if violation_time.strip():
     try:
-        # Attempt to convert user input to datetime
-        vt_dt = pd.to_datetime(violation_time.strip())
+        # Parse the user's input and immediately lock it to US/Central
+        vt_dt = pd.to_datetime(violation_time.strip()).tz_localize('US/Central')
         
         # Check against the fetched news data
         news_df = fetch_usd_high_impact_news()
@@ -228,15 +229,19 @@ if violation_time.strip():
                 # Check if violation time is within 60 seconds of the event time
                 time_diff = abs((vt_dt - event_time).total_seconds())
                 if time_diff <= 60:
-                    news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of a major economic event: **{row['title']}** ({event_time.strftime('%I:%M %p EST')})"
+                    # Convert the event time to Central Time just so the display matches the user's local input
+                    event_time_cst = event_time.tz_convert('US/Central')
+                    news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of a major economic event: **{row['title']}** ({event_time_cst.strftime('%I:%M %p CST')})"
                     st.warning(news_warning, icon="🚨")
                     break
     except Exception:
-        # If the user is currently typing the date or typed it wrong, fail silently until valid
+        # Fails silently if the user is typing an incomplete date
         pass
 
 # --- 10. Clipboard Summary ---
 st.divider()
+
+# Updated label in the summary text
 summary_text = f"""--- MLL Checker Summary ---
 Instrument: {instrument} ({direction})
 Quantity: {qty}
@@ -244,7 +249,7 @@ Fill Price: {fill_price:.2f}
 Close Price: {close_price:.2f}
 {clean_label}: {high_low:.2f}
 Balance Before: {balance_before:.2f}
-MLL: {mll:.2f}
+Min Balance - MLL: {mll:.2f}
 Violation Time: {violation_time}
 
 --- Results ---
@@ -254,7 +259,6 @@ Difference: ${difference:.2f}
 Status: {"Invalid" if is_invalid else "Valid Violation"}
 """
 
-# Append the warning to the summary if it triggered
 if news_warning:
     summary_text += f"\n--- Flags ---\n{news_warning}"
 

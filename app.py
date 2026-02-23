@@ -4,207 +4,154 @@ from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Invalid MLL Violation Checker", layout="wide")
 
-# --- Admin Access (Hidden in Sidebar) ---
-with st.sidebar:
-    st.header("🔐 Admin Access")
-    admin_password = st.text_input("Password", type="password")
-    
-    expected_password = st.secrets.get("admin_password", "admin123")
-    is_admin = (admin_password == expected_password)
-    
-    if is_admin:
-        st.success("Admin unlocked!")
-
-# --- Connect to Google Sheets ---
-default_instruments = [
+# --- 1. Constants & Defaults (DRY Principle) ---
+DEFAULT_INSTRUMENTS = [
     {"Instrument": "NQ", "Value per point": 20.0, "Tick Size": 0.25},
     {"Instrument": "ES", "Value per point": 50.0, "Tick Size": 0.25},
 ]
 
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    instruments_df = conn.read(worksheet="Instruments", ttl="0m") 
-    instruments_df = instruments_df.dropna(how="all") 
-    
-    if instruments_df.empty:
-        instruments_df = pd.DataFrame(default_instruments)
-except Exception as e:
-    instruments_df = pd.DataFrame(default_instruments)
-    st.sidebar.error(f"⚠️ Google Sheets Error: {e}") 
+# Storing default values in a dictionary saves us from writing 10 different "if" statements
+STATE_DEFAULTS = {
+    "qty": 2, "fill_price": 24798.25, "close_price": 24845.75,
+    "high_low": 24848.00, "balance_before": 0.00, "mll": -2000.00,
+    "violation_time": ""
+}
 
-if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_refresh', True):
-    st.session_state.instruments_df = instruments_df
-    st.session_state.force_refresh = False
+# --- 2. Session State Management ---
+# Loop through the dictionary to set up memory instantly
+for key, val in STATE_DEFAULTS.items():
+    if key not in st.session_state: st.session_state[key] = val
 
-# --- Widget Session State Initialization ---
-if "qty" not in st.session_state: st.session_state.qty = 2
-if "fill_price" not in st.session_state: st.session_state.fill_price = 24798.25
-if "close_price" not in st.session_state: st.session_state.close_price = 24845.75
-if "high_low" not in st.session_state: st.session_state.high_low = 24848.00
-if "balance_before" not in st.session_state: st.session_state.balance_before = 0.00
-if "mll" not in st.session_state: st.session_state.mll = -2000.00
-if "violation_time" not in st.session_state: st.session_state.violation_time = ""
-if "fill_data" not in st.session_state: 
+if "fill_data" not in st.session_state:
     st.session_state.fill_data = pd.DataFrame([{"Qty": 1, "Price": 24798.25}, {"Qty": 1, "Price": 24800.00}])
 
-# --- Build Instrument Dictionary dynamically ---
-INSTRUMENTS = {}
-for _, row in st.session_state.instruments_df.iterrows():
-    name = str(row["Instrument"]).strip()
-    if name == "nan" or name == "": continue
-    
-    val_per_pt = float(row["Value per point"])
-    tick_size = float(row["Tick Size"])
-    
-    ticks_per_pt = 1 / tick_size if tick_size != 0 else 0
-    tick_val = val_per_pt * tick_size
-    INSTRUMENTS[name] = {"Tick Value": tick_val, "Ticks per Pt": ticks_per_pt}
-
-# --- Actions & Dialogs ---
 def clear_all():
-    """Resets all input fields to 0 or blank"""
+    """Loops through defaults to instantly wipe the board clean"""
+    for key in STATE_DEFAULTS.keys():
+        st.session_state[key] = "" if key == "violation_time" else 0.00
     st.session_state.qty = 0
-    st.session_state.fill_price = 0.00
-    st.session_state.close_price = 0.00
-    st.session_state.high_low = 0.00
-    st.session_state.balance_before = 0.00
-    st.session_state.mll = 0.00
-    st.session_state.violation_time = ""
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
 
+# --- 3. Optimized Google Sheets Connection ---
+# We moved the connection INSIDE the if-statement so it only runs once, eliminating lag!
+if "instruments_df" not in st.session_state or getattr(st.session_state, 'force_refresh', True):
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Instruments", ttl="0m").dropna(how="all")
+        st.session_state.instruments_df = df if not df.empty else pd.DataFrame(DEFAULT_INSTRUMENTS)
+    except Exception as e:
+        st.session_state.instruments_df = pd.DataFrame(DEFAULT_INSTRUMENTS)
+        st.sidebar.error(f"⚠️ Sheets Error: {e}")
+    st.session_state.force_refresh = False
+
+# Build Instrument Dictionary cleanly
+INSTRUMENTS = {}
+for _, row in st.session_state.instruments_df.dropna(subset=["Instrument"]).iterrows():
+    name = str(row["Instrument"]).strip()
+    if not name: continue
+    
+    val_per_pt, tick_size = float(row.get("Value per point", 0)), float(row.get("Tick Size", 0))
+    INSTRUMENTS[name] = {"Tick Value": val_per_pt * tick_size, "Ticks per Pt": 1 / tick_size if tick_size else 0}
+
+if not INSTRUMENTS: INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.0}
+
+# --- 4. Helper Functions ---
+def parse_pasted_data(text):
+    """Abstracts the parsing logic to keep the UI clean"""
+    rows = []
+    for line in text.strip().split('\n'):
+        cols = line.split('\t')
+        if len(cols) >= 11:
+            try:
+                q, p = float(cols[7].replace(',', '')), float(cols[10].replace(',', ''))
+                if q != 0: rows.append({"Qty": q, "Price": p})
+            except ValueError: pass
+    return rows
+
+# --- 5. Dialogs ---
 @st.dialog("⚙️ Manage Instruments")
 def manage_instruments_dialog():
-    st.markdown("Add, edit, or delete instruments. Changes will sync permanently to Google Sheets.")
+    st.markdown("Add, edit, or delete instruments. Changes sync to Google Sheets.")
     edited_df = st.data_editor(st.session_state.instruments_df, num_rows="dynamic", use_container_width=True, hide_index=True)
     
     if st.button("Save to Cloud", type="primary"):
         cleaned_df = edited_df.dropna(subset=["Instrument"])
         cleaned_df = cleaned_df[cleaned_df["Instrument"].astype(str).str.strip() != ""]
-        
         try:
+            conn = st.connection("gsheets", type=GSheetsConnection)
             conn.update(worksheet="Instruments", data=cleaned_df)
             st.session_state.force_refresh = True 
             st.rerun()
-        except Exception as e:
-            st.error(f"Failed to save to Google Sheets. Check your setup.")
+        except Exception:
+            st.error("Failed to save to Google Sheets.")
 
 @st.dialog("Calculate Weighted Average Fill")
 def weighted_average_dialog():
-    st.markdown("Enter multiple fills manually, or **paste raw tab-delimited data** directly from your platform.")
+    st.markdown("Enter multiple fills manually, or **paste raw tab-delimited data**.")
     
-    # --- Paste Feature (Now with Auto-Apply) ---
-    pasted_text = st.text_area("📋 Quick Paste", placeholder="Paste rows here... (Extracts Col H & Col K)", height=100)
-    
+    pasted_text = st.text_area("📋 Quick Paste", placeholder="Paste rows here...", height=100)
     if st.button("🚀 Extract & Apply", type="primary"):
-        parsed_rows = []
-        for line in pasted_text.strip().split('\n'):
-            if not line.strip(): continue 
-            cols = line.split('\t')
-            if len(cols) >= 11:
-                try:
-                    qty_str = cols[7].replace(',', '').strip()
-                    price_str = cols[10].replace(',', '').strip()
-                    if qty_str and price_str: 
-                        q = float(qty_str)
-                        p = float(price_str)
-                        if q != 0:
-                            parsed_rows.append({"Qty": q, "Price": p})
-                except ValueError:
-                    pass 
-        
+        parsed_rows = parse_pasted_data(pasted_text)
         if parsed_rows:
-            # Turn into dataframe and calculate math immediately
             df = pd.DataFrame(parsed_rows)
             total_q = int(df["Qty"].sum())
-            
             if total_q != 0:
-                weighted_p = float((df["Qty"] * df["Price"]).sum() / total_q)
-                
-                # Apply instantly to session state
                 st.session_state.qty = total_q
-                st.session_state.fill_price = weighted_p
+                st.session_state.fill_price = float((df["Qty"] * df["Price"]).sum() / total_q)
                 st.session_state.fill_data = df 
-                st.rerun() # This closes the dialog and refreshes the main page!
-            else:
-                st.error("Total quantity equals 0. Cannot calculate average price.")
-        else:
-            st.error("Could not find valid numbers in Column H (Qty) and Column K (Price).")
+                st.rerun()
+            else: st.error("Total quantity is 0.")
+        else: st.error("No valid data found in Columns H and K.")
             
     st.divider()
-
-    # --- Existing Manual Editor ---
     st.caption("Or edit rows manually:")
     edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
-    
-    # Changed button text so it's not confusing
     if st.button("Calculate & Apply Manual Edits"):
-        valid_fills = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
-        if not valid_fills.empty:
-            total_q = int(valid_fills["Qty"].sum())
-            weighted_p = float((valid_fills["Qty"] * valid_fills["Price"]).sum() / total_q)
-            
+        valid = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
+        if not valid.empty:
+            total_q = int(valid["Qty"].sum())
             st.session_state.qty = total_q
-            st.session_state.fill_price = weighted_p
+            st.session_state.fill_price = float((valid["Qty"] * valid["Price"]).sum() / total_q)
             st.session_state.fill_data = edited_df 
             st.rerun() 
-        else:
-            st.error("Please enter at least one valid Qty and Price.")
+        else: st.error("Please enter valid data.")
 
-# --- App Header & Responsive CSS ---
+# --- 6. Sidebar & Header UI ---
+with st.sidebar:
+    st.header("🔐 Admin Access")
+    is_admin = (st.text_input("Password", type="password") == st.secrets.get("admin_password", "admin123"))
+    if is_admin: st.success("Admin unlocked!")
+
 st.title("📊 Invalid MLL Violation Checker")
-
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-        h1 { font-size: clamp(1.5rem, 4vw, 2.5rem) !important; padding-top: 0 !important; }
+        h1 { font-size: clamp(1.5rem, 4vw, 2.5rem) !important; padding-top: 0 !important; margin-bottom: -1.5rem;}
         div[data-testid="stMetricValue"] { font-size: 1.5rem; }
         hr { margin-top: 0.5rem; margin-bottom: 0.5rem; }
-        @media (min-width: 800px) {
-            h1 { margin-bottom: -1.5rem; }
-            h2 { margin-bottom: -1rem; padding-top: 0rem; }
-        }
     </style>
 """, unsafe_allow_html=True)
 
-# Action Buttons
 btn_col1, btn_col2, btn_col3 = st.columns(3)
 with btn_col1:
-    if st.button("🧮 Add Multiple Entries"):
-        weighted_average_dialog()
+    if st.button("🧮 Add Multiple Entries"): weighted_average_dialog()
 with btn_col2:
-    if is_admin:
-        if st.button("⚙️ Manage Instruments"):
-            manage_instruments_dialog()
+    if is_admin and st.button("⚙️ Manage Instruments"): manage_instruments_dialog()
 with btn_col3:
-    if st.button("🗑️ Clear All"):
-        clear_all()
+    if st.button("🗑️ Clear All"): clear_all()
 
-# --- Inputs Section ---
-instrument_list = list(INSTRUMENTS.keys())
-if not instrument_list:
-    instrument_list = ["None"]
-    INSTRUMENTS["None"] = {"Tick Value": 0.0, "Ticks per Pt": 0.0}
-
+# --- 7. Main Inputs ---
 st.subheader("Trade Details")
+curr_qty = st.session_state.qty
 
-# Determine Dynamic High/Low Label and Tooltip based on Quantity
-current_qty = st.session_state.qty
-if current_qty > 0:
-    hl_label = "📉 Low"
-    hl_help = "Long Adverse Excursion: Enter the lowest price reached during the trade."
-    clean_label = "Low"
-elif current_qty < 0:
-    hl_label = "📈 High"
-    hl_help = "Short Adverse Excursion: Enter the highest price reached during the trade."
-    clean_label = "High"
-else:
-    hl_label = "High/Low"
-    hl_help = "Enter the adverse excursion price (Lowest price for Longs, Highest price for Shorts)."
-    clean_label = "High/Low"
+# Dynamic Label Logic
+hl_label, hl_help, clean_label = ("High/Low", "Enter adverse excursion price.", "High/Low")
+if curr_qty > 0: hl_label, hl_help, clean_label = ("📉 Low", "Long Adverse Excursion: Lowest price.", "Low")
+elif curr_qty < 0: hl_label, hl_help, clean_label = ("📈 High", "Short Adverse Excursion: Highest price.", "High")
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
-    instrument = st.selectbox("Instrument", options=instrument_list, index=0)
+    instrument = st.selectbox("Instrument", options=list(INSTRUMENTS.keys()))
     close_price = st.number_input("Close Price", format="%.2f", key="close_price")
 with c2:
     qty = st.number_input("Quantity (Qty)", step=1, key="qty")
@@ -213,47 +160,31 @@ with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
-    mll = st.number_input("MLL", format="%.2f", key="mll", help="Maximum Loss Limit or Personal Daily Loss Limit")
+    mll = st.number_input("MLL", format="%.2f", key="mll", help="Maximum Loss Limit")
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
 
-# --- Calculations Section ---
-tick_value = INSTRUMENTS[instrument]["Tick Value"]
-ticks_per_pt = INSTRUMENTS[instrument]["Ticks per Pt"]
+# --- 8. Math & Output ---
+t_val, t_pt = INSTRUMENTS[instrument]["Tick Value"], INSTRUMENTS[instrument]["Ticks per Pt"]
+direction = "Flat" if qty == 0 else ("Long" if qty > 0 else "Short")
 
-if qty > 0:
-    direction = "Long"
-elif qty < 0:
-    direction = "Short"
-else:
-    direction = "Flat"
-
-price_diff = abs(high_low - fill_price)
-mae = - (price_diff * tick_value * ticks_per_pt * abs(qty))
-
+mae = - (abs(high_low - fill_price) * t_val * t_pt * abs(qty))
 dist_2_mll = balance_before - mll
 difference = dist_2_mll + mae  
+is_invalid = abs(mae) <= dist_2_mll
 
-is_invalid_violation = abs(mae) <= dist_2_mll
-status = "Invalid" if is_invalid_violation else "Valid Violation"
-
-# --- Output Section ---
 st.subheader("Calculation Results")
+st.write(f"**Tick Value:** {t_val:,.2f} &nbsp;|&nbsp; **Ticks per Pt:** {t_pt:,.2f} &nbsp;|&nbsp; **Direction:** {direction}")
 
-st.write(f"**Calculated Tick Value:** {tick_value:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Calculated Ticks per Pt:** {ticks_per_pt:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Direction:** {direction}")
+mc1, mc2, mc3 = st.columns(3)
+mc1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
+mc2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
+mc3.metric("Difference", f"${difference:,.2f}")
 
-metric_col1, metric_col2, metric_col3 = st.columns(3)
-metric_col1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
-metric_col2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
-metric_col3.metric("Difference", f"${difference:,.2f}")
+if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
+else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
-if is_invalid_violation:
-    st.error(f"**Status:** {status} - The loss did not exceed the MLL distance.")
-else:
-    st.success(f"**Status:** {status} - The MLL limit was breached!")
-
-# --- Copy to Clipboard Summary ---
+# --- 9. Clipboard Summary ---
 st.divider()
-
 summary_text = f"""--- MLL Checker Summary ---
 Instrument: {instrument} ({direction})
 Quantity: {qty}
@@ -268,9 +199,8 @@ Violation Time: {violation_time}
 MAE: ${mae:.2f}
 Distance to MLL: ${dist_2_mll:.2f}
 Difference: ${difference:.2f}
-Status: {status}
+Status: {"Invalid" if is_invalid else "Valid Violation"}
 """
-
 with st.expander("📄 View / Copy Text Summary"):
-    st.caption("Hover over the top right corner of the box below and click the 'Copy' icon to copy this data.")
+    st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")

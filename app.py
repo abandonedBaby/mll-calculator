@@ -77,11 +77,11 @@ def fetch_usd_high_impact_news():
                 if time_str and 'All Day' not in time_str and 'Tentative' not in time_str:
                     try:
                         dt_str = f"{date_str} {time_str}"
-                        # Parse the time and explicitly set it as US/Eastern (Forex Factory default)
-                        dt_obj = pd.to_datetime(dt_str, format='%m-%d-%Y %I:%M%p').tz_localize('US/Eastern')
+                        # Removed the strict format parameter so pandas can automatically handle missing leading zeros!
+                        dt_obj = pd.to_datetime(dt_str).tz_localize('US/Eastern')
                         events.append({'title': title, 'Event_Time': dt_obj})
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"Failed to parse date: {dt_str} - {e}")
         return pd.DataFrame(events)
     except Exception as e:
         return pd.DataFrame() 
@@ -222,13 +222,14 @@ else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
 # --- 9. Economic Event Checking (Timezone Aware!) ---
 news_warning = ""
+news_df = fetch_usd_high_impact_news()
+
 if violation_time.strip():
     try:
         # Parse the user's input and immediately lock it to US/Central
         vt_dt = pd.to_datetime(violation_time.strip()).tz_localize('US/Central')
         
         # Check against the fetched news data
-        news_df = fetch_usd_high_impact_news()
         if not news_df.empty:
             for _, row in news_df.iterrows():
                 event_time = row['Event_Time']
@@ -244,6 +245,16 @@ if violation_time.strip():
     except Exception:
         # Fails silently if the user is typing an incomplete date
         pass
+
+# Debug/Viewing tool for the News Feed
+with st.expander("📅 View Current Week's USD High Impact News"):
+    if not news_df.empty:
+        # Create a display copy converted to CST for easy reading
+        display_df = news_df.copy()
+        display_df['Event_Time_CST'] = display_df['Event_Time'].dt.tz_convert('US/Central').dt.strftime('%Y-%m-%d %I:%M %p CST')
+        st.dataframe(display_df[['title', 'Event_Time_CST']], hide_index=True, use_container_width=True)
+    else:
+        st.write("No High Impact USD events found for this week, or feed is currently unavailable.")
 
 # --- 10. Clipboard Summary ---
 st.divider()
@@ -272,4 +283,5 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 

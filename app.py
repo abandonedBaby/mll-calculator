@@ -92,43 +92,52 @@ def manage_instruments_dialog():
 def weighted_average_dialog():
     st.markdown("Enter multiple fills manually, or **paste raw tab-delimited data** directly from your platform.")
     
-    # --- New Paste Feature ---
+    # --- Paste Feature (Now with Auto-Apply) ---
     pasted_text = st.text_area("📋 Quick Paste", placeholder="Paste rows here... (Extracts Col H & Col K)", height=100)
-    if st.button("Extract Data from Paste"):
+    
+    if st.button("🚀 Extract & Apply", type="primary"):
         parsed_rows = []
-        # Split the text into lines
         for line in pasted_text.strip().split('\n'):
-            if not line.strip(): continue # Skip empty lines
-            
-            # Split the line by tabs
+            if not line.strip(): continue 
             cols = line.split('\t')
-            
-            # Check if line has at least 11 columns (Index 10 is K)
             if len(cols) >= 11:
                 try:
-                    # Column H is index 7, Column K is index 10
                     qty_str = cols[7].replace(',', '').strip()
                     price_str = cols[10].replace(',', '').strip()
-                    
-                    if qty_str and price_str: # Ensure they aren't blank
+                    if qty_str and price_str: 
                         q = float(qty_str)
                         p = float(price_str)
                         if q != 0:
                             parsed_rows.append({"Qty": q, "Price": p})
                 except ValueError:
-                    pass # Skip headers or weird formatting without crashing
+                    pass 
         
         if parsed_rows:
-            st.session_state.fill_data = pd.DataFrame(parsed_rows)
-            st.rerun() # Refresh app to show the extracted data in the editor below
+            # Turn into dataframe and calculate math immediately
+            df = pd.DataFrame(parsed_rows)
+            total_q = int(df["Qty"].sum())
+            
+            if total_q != 0:
+                weighted_p = float((df["Qty"] * df["Price"]).sum() / total_q)
+                
+                # Apply instantly to session state
+                st.session_state.qty = total_q
+                st.session_state.fill_price = weighted_p
+                st.session_state.fill_data = df 
+                st.rerun() # This closes the dialog and refreshes the main page!
+            else:
+                st.error("Total quantity equals 0. Cannot calculate average price.")
         else:
             st.error("Could not find valid numbers in Column H (Qty) and Column K (Price).")
             
     st.divider()
 
     # --- Existing Manual Editor ---
+    st.caption("Or edit rows manually:")
     edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
-    if st.button("Calculate & Apply", type="primary"):
+    
+    # Changed button text so it's not confusing
+    if st.button("Calculate & Apply Manual Edits"):
         valid_fills = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
         if not valid_fills.empty:
             total_q = int(valid_fills["Qty"].sum())

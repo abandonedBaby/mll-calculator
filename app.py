@@ -228,18 +228,21 @@ if curr_qty > 0: hl_label, hl_help, clean_label = ("📉 Low", "Long Adverse Exc
 elif curr_qty < 0: hl_label, hl_help, clean_label = ("📈 High", "Short Adverse Excursion: Highest price.", "High")
 
 c1, c2, c3, c4 = st.columns(4)
+
+# Top Row: Account & Timing Data
+# Bottom Row: Execution Data
 with c1:
-    instrument = st.selectbox("Instrument", options=list(INSTRUMENTS.keys()))
-    close_price = st.number_input("Close Price", format="%.2f", key="close_price")
-with c2:
-    qty = st.number_input("Quantity (Qty)", step=1, key="qty")
-    high_low = st.number_input(hl_label, format="%.2f", key="high_low", help=hl_help)
-with c3:
-    fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
-    balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
-with c4:
-    mll = st.number_input("Min Balance - MLL", format="%.2f", key="mll", help="Maximum Loss Limit")
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
+    qty = st.number_input("Quantity (Qty)", step=1, key="qty")
+with c2:
+    mll = st.number_input("Min Balance - MLL", format="%.2f", key="mll", help="Maximum Loss Limit")
+    fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
+with c3:
+    balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
+    close_price = st.number_input("Close Price", format="%.2f", key="close_price")
+with c4:
+    instrument = st.selectbox("Instrument", options=list(INSTRUMENTS.keys()))
+    high_low = st.number_input(hl_label, format="%.2f", key="high_low", help=hl_help)
 
 # --- 8. Math & Output ---
 t_val, t_pt = INSTRUMENTS[instrument]["Tick Value"], INSTRUMENTS[instrument]["Ticks per Pt"]
@@ -306,6 +309,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

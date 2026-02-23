@@ -90,7 +90,43 @@ def manage_instruments_dialog():
 
 @st.dialog("Calculate Weighted Average Fill")
 def weighted_average_dialog():
-    st.markdown("Enter your multiple fills below. (Use negative Qty for shorts).")
+    st.markdown("Enter multiple fills manually, or **paste raw tab-delimited data** directly from your platform.")
+    
+    # --- New Paste Feature ---
+    pasted_text = st.text_area("📋 Quick Paste", placeholder="Paste rows here... (Extracts Col H & Col K)", height=100)
+    if st.button("Extract Data from Paste"):
+        parsed_rows = []
+        # Split the text into lines
+        for line in pasted_text.strip().split('\n'):
+            if not line.strip(): continue # Skip empty lines
+            
+            # Split the line by tabs
+            cols = line.split('\t')
+            
+            # Check if line has at least 11 columns (Index 10 is K)
+            if len(cols) >= 11:
+                try:
+                    # Column H is index 7, Column K is index 10
+                    qty_str = cols[7].replace(',', '').strip()
+                    price_str = cols[10].replace(',', '').strip()
+                    
+                    if qty_str and price_str: # Ensure they aren't blank
+                        q = float(qty_str)
+                        p = float(price_str)
+                        if q != 0:
+                            parsed_rows.append({"Qty": q, "Price": p})
+                except ValueError:
+                    pass # Skip headers or weird formatting without crashing
+        
+        if parsed_rows:
+            st.session_state.fill_data = pd.DataFrame(parsed_rows)
+            st.rerun() # Refresh app to show the extracted data in the editor below
+        else:
+            st.error("Could not find valid numbers in Column H (Qty) and Column K (Price).")
+            
+    st.divider()
+
+    # --- Existing Manual Editor ---
     edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
     if st.button("Calculate & Apply", type="primary"):
         valid_fills = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
@@ -168,7 +204,6 @@ with c3:
     fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with c4:
-    # Added the help tooltip to MLL
     mll = st.number_input("MLL", format="%.2f", key="mll", help="Maximum Loss Limit or Personal Daily Loss Limit")
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
 
@@ -198,7 +233,6 @@ st.subheader("Calculation Results")
 st.write(f"**Calculated Tick Value:** {tick_value:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Calculated Ticks per Pt:** {ticks_per_pt:,.2f} &nbsp;&nbsp;|&nbsp;&nbsp; **Direction:** {direction}")
 
 metric_col1, metric_col2, metric_col3 = st.columns(3)
-# Added the help tooltip to the MAE Metric display
 metric_col1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
 metric_col2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 metric_col3.metric("Difference", f"${difference:,.2f}")

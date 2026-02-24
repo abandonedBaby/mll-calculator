@@ -271,7 +271,29 @@ mc1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
 mc2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 mc3.metric("Difference", f"${difference:,.2f}")
 
+# --- 8. Math & Output ---
+t_val, t_pt = INSTRUMENTS[instrument]["Tick Value"], INSTRUMENTS[instrument]["Ticks per Pt"]
+direction = "Flat" if qty == 0 else ("Long" if qty > 0 else "Short")
+
+mae = - (abs(high_low - fill_price) * t_val * t_pt * abs(qty))
+dist_2_mll = balance_before - mll
+difference = dist_2_mll + mae  
+is_invalid = abs(mae) <= dist_2_mll
+
+st.subheader("Calculation Results")
+st.write(f"**Tick Value:** {t_val:,.2f} &nbsp;|&nbsp; **Ticks per Pt:** {t_pt:,.2f} &nbsp;|&nbsp; **Direction:** {direction}")
+
+mc1, mc2, mc3 = st.columns(3)
+mc1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
+mc2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
+mc3.metric("Difference", f"${difference:,.2f}")
+
+# 1. STATUS NOTIFICATION AREA
+if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
+else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
+
 # --- 8.5 Visual Representation ---
+# 2. CHART AREA (Now safely below the status notification)
 if qty != 0:
     st.divider()
     
@@ -279,7 +301,7 @@ if qty != 0:
     dollar_per_point = t_val * t_pt * abs(qty)
     points_to_mll = dist_2_mll / dollar_per_point if dollar_per_point != 0 else 0
     
-    # Set dynamic colors AND smart text label positioning so they don't overlap the lines!
+    # Set dynamic colors AND smart text label positioning
     if direction == "Long":
         mll_price = fill_price - points_to_mll
         path_color = "#00d26a" # Greenish
@@ -292,21 +314,21 @@ if qty != 0:
     # Build the Chart
     fig = go.Figure()
     
-    # 1. The Simulated Trade Path (V-shape)
+    # The Simulated Trade Path (V-shape)
     fig.add_trace(go.Scatter(
         x=["1. Entry", "2. Max Excursion (MAE)", "3. Exit"],
         y=[fill_price, high_low, close_price],
-        mode='lines+markers+text', # <--- Added +text to force permanent labels
-        text=[f"Entry: {fill_price:.2f}", f"MAE: {high_low:.2f}", f"Exit: {close_price:.2f}"],
-        textposition=label_positions, # <--- Smart placement
-        textfont=dict(size=14, color="white"), # Clean white text for dark mode
+        mode='lines+markers+text',
+        text=[f"Entry: {fill_price:.2f}", f"MAE: {high_low:.2f}", f"Exit: {close_price:.2f}"], 
+        textposition=label_positions,
+        textfont=dict(size=14, color="white"),
         name='Trade Path',
         marker=dict(size=14, color=['#4361ee', '#f94144' if is_invalid else '#f9c74f', '#4361ee']),
         line=dict(width=4, color=path_color),
         hovertemplate="<b>%{x}</b><br>Price: %{y:.2f}<extra></extra>"
     ))
     
-    # 2. The MLL Limit Line (Dashed Red Line)
+    # The MLL Limit Line (Dashed Red Line)
     fig.add_hline(
         y=mll_price, 
         line_dash="dash", 
@@ -317,7 +339,7 @@ if qty != 0:
         annotation_font_color="#f94144"
     )
     
-    # 3. Chart Layout & Styling
+    # Chart Layout & Styling
     fig.update_layout(
         title="Trade Excursion vs. MLL Boundary",
         yaxis=dict(side="right", title="Price Level", tickformat=".2f"),
@@ -330,9 +352,6 @@ if qty != 0:
     
     # Render the chart in Streamlit
     st.plotly_chart(fig, use_container_width=True)
-
-if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
-else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
 # --- 9. Economic Event Checking (Timezone Aware!) ---
 news_warning = ""
@@ -379,6 +398,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

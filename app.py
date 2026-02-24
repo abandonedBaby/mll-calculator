@@ -288,12 +288,31 @@ mc1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
 mc2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 mc3.metric("Difference", f"${difference:,.2f}")
 
-# 1. STATUS NOTIFICATION AREA
+# --- 8.1 STATUS NOTIFICATION ---
 if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
 else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
-# --- 8.5 Visual Representation ---
-# 2. CHART AREA (Now safely below the status notification)
+# --- 8.2 ECONOMIC EVENT CHECKING (Moved up above the chart!) ---
+news_warning = ""
+news_df = st.session_state.news_archive_df
+
+if violation_time.strip():
+    try:
+        vt_dt = pd.to_datetime(violation_time.strip()).tz_localize('US/Central')
+        
+        if not news_df.empty:
+            for _, row in news_df.iterrows():
+                event_time = row['Event_Time']
+                time_diff = abs((vt_dt - event_time).total_seconds())
+                if time_diff <= 60:
+                    event_time_cst = event_time.tz_convert('US/Central')
+                    news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of a major economic event: **{row['title']}** ({event_time_cst.strftime('%I:%M %p CST')})"
+                    st.warning(news_warning, icon="🚨")
+                    break
+    except Exception:
+        pass
+
+# --- 8.5 VISUAL REPRESENTATION (Chart shifted to the bottom) ---
 if qty != 0:
     st.divider()
     
@@ -353,26 +372,6 @@ if qty != 0:
     # Render the chart in Streamlit
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 9. Economic Event Checking (Timezone Aware!) ---
-news_warning = ""
-news_df = st.session_state.news_archive_df
-
-if violation_time.strip():
-    try:
-        vt_dt = pd.to_datetime(violation_time.strip()).tz_localize('US/Central')
-        
-        if not news_df.empty:
-            for _, row in news_df.iterrows():
-                event_time = row['Event_Time']
-                time_diff = abs((vt_dt - event_time).total_seconds())
-                if time_diff <= 60:
-                    event_time_cst = event_time.tz_convert('US/Central')
-                    news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of a major economic event: **{row['title']}** ({event_time_cst.strftime('%I:%M %p CST')})"
-                    st.warning(news_warning, icon="🚨")
-                    break
-    except Exception:
-        pass
-
 # --- 10. Clipboard Summary ---
 st.divider()
 summary_text = f"""--- MLL Checker Summary ---
@@ -398,6 +397,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

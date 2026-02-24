@@ -5,7 +5,11 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import datetime
 
-st.set_page_config(page_title="Trade Violation Checker", layout="wide")
+st.set_page_config(
+    page_title="Trade Violation Checker", 
+    page_icon="🚨", 
+    layout="wide"
+)
 
 # --- 1. Constants & Defaults ---
 DEFAULT_INSTRUMENTS = [
@@ -309,6 +313,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

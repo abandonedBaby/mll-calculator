@@ -297,7 +297,7 @@ if qty != 0:
         x=["1. Entry", "2. Max Excursion (MAE)", "3. Exit"],
         y=[fill_price, high_low, close_price],
         mode='lines+markers+text', # <--- Added +text to force permanent labels
-        text=[f"{fill_price:.2f}", f"{high_low:.2f}", f"{close_price:.2f}"], # <--- The actual prices
+        text=[f"Entry: {fill_price:.2f}", f"MAE: {high_low:.2f}", f"Exit: {close_price:.2f}"],
         textposition=label_positions, # <--- Smart placement
         textfont=dict(size=14, color="white"), # Clean white text for dark mode
         name='Trade Path',
@@ -379,6 +379,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

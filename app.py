@@ -231,21 +231,26 @@ hl_label, hl_help, clean_label = ("High/Low", "Enter adverse excursion price.", 
 if curr_qty > 0: hl_label, hl_help, clean_label = ("📉 Low", "Long Adverse Excursion: Lowest price.", "Low")
 elif curr_qty < 0: hl_label, hl_help, clean_label = ("📈 High", "Short Adverse Excursion: Highest price.", "High")
 
-c1, c2, c3, c4 = st.columns(4)
-
-# Top Row: Account & Timing Data
-# Bottom Row: Execution Data
-with c1:
+# --- ROW 1: Account & Timing Data ---
+r1c1, r1c2, r1c3, r1c4 = st.columns(4)
+with r1c1:
     violation_time = st.text_input("Violation Time", placeholder="YYYY-MM-DD HH:MM:SS", key="violation_time")
-    qty = st.number_input("Quantity (Qty)", step=1, key="qty")
-with c2:
+with r1c2:
     mll = st.number_input("Min Balance - MLL", format="%.2f", key="mll", help="Maximum Loss Limit")
-    fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
-with c3:
+with r1c3:
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
-    close_price = st.number_input("Close Price", format="%.2f", key="close_price")
-with c4:
+with r1c4:
     instrument = st.selectbox("Instrument", options=list(INSTRUMENTS.keys()))
+
+# --- ROW 2: Execution Data ---
+r2c1, r2c2, r2c3, r2c4 = st.columns(4)
+with r2c1:
+    qty = st.number_input("Quantity (Qty)", step=1, key="qty")
+with r2c2:
+    fill_price = st.number_input("Fill Price (Avg)", format="%.2f", key="fill_price")
+with r2c3:
+    close_price = st.number_input("Close Price", format="%.2f", key="close_price")
+with r2c4:
     high_low = st.number_input(hl_label, format="%.2f", key="high_low", help=hl_help)
 
 # --- 8. Math & Output ---
@@ -313,6 +318,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

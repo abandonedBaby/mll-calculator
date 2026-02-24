@@ -279,12 +279,15 @@ if qty != 0:
     dollar_per_point = t_val * t_pt * abs(qty)
     points_to_mll = dist_2_mll / dollar_per_point if dollar_per_point != 0 else 0
     
+    # Set dynamic colors AND smart text label positioning so they don't overlap the lines!
     if direction == "Long":
         mll_price = fill_price - points_to_mll
         path_color = "#00d26a" # Greenish
+        label_positions = ["top center", "bottom center", "top center"]
     else:
         mll_price = fill_price + points_to_mll
         path_color = "#f94144" # Reddish
+        label_positions = ["bottom center", "top center", "bottom center"]
         
     # Build the Chart
     fig = go.Figure()
@@ -293,7 +296,10 @@ if qty != 0:
     fig.add_trace(go.Scatter(
         x=["1. Entry", "2. Max Excursion (MAE)", "3. Exit"],
         y=[fill_price, high_low, close_price],
-        mode='lines+markers',
+        mode='lines+markers+text', # <--- Added +text to force permanent labels
+        text=[f"{fill_price:.2f}", f"{high_low:.2f}", f"{close_price:.2f}"], # <--- The actual prices
+        textposition=label_positions, # <--- Smart placement
+        textfont=dict(size=14, color="white"), # Clean white text for dark mode
         name='Trade Path',
         marker=dict(size=14, color=['#4361ee', '#f94144' if is_invalid else '#f9c74f', '#4361ee']),
         line=dict(width=4, color=path_color),
@@ -373,6 +379,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

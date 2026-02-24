@@ -18,23 +18,42 @@ DEFAULT_INSTRUMENTS = [
     {"Instrument": "ES", "Value per point": 50.0, "Tick Size": 0.25},
 ]
 
+# Added 'instrument' to our tracker so it remembers which asset each account traded!
 STATE_DEFAULTS = {
     "qty": 2, "fill_price": 24798.25, "close_price": 24845.75,
     "high_low": 24848.00, "balance_before": 0.00, "mll": -2000.00,
-    "violation_time": ""
+    "violation_time": "", "instrument": "NQ" 
 }
 
-# --- 2. Session State Management ---
-for key, val in STATE_DEFAULTS.items():
-    if key not in st.session_state: st.session_state[key] = val
+# --- 2. Session State Management (Temporary Account Memory) ---
+if "accounts_db" not in st.session_state:
+    # First time loading the app: Create a default account
+    st.session_state.accounts_db = {"Default Account": STATE_DEFAULTS.copy()}
+    st.session_state.current_acc_name = "Default Account"
+    for key, val in STATE_DEFAULTS.items():
+        st.session_state[key] = val
 
 if "fill_data" not in st.session_state:
     st.session_state.fill_data = pd.DataFrame([{"Qty": 1, "Price": 24798.25}, {"Qty": 1, "Price": 24800.00}])
 
+# Auto-Save: Constantly save the screen's current numbers into the active account's memory
+current_acc = st.session_state.current_acc_name
+for key in STATE_DEFAULTS.keys():
+    if key in st.session_state:
+        st.session_state.accounts_db[current_acc][key] = st.session_state[key]
+
+def load_account(acc_name):
+    """Pulls data from the selected account and pushes it to the screen."""
+    data = st.session_state.accounts_db[acc_name]
+    for k, v in data.items():
+        st.session_state[k] = v
+    st.session_state.current_acc_name = acc_name
+
 def clear_all():
-    for key in STATE_DEFAULTS.keys():
-        st.session_state[key] = "" if key == "violation_time" else 0.00
-    st.session_state.qty = 0
+    """Clears ONLY the currently active account so you don't lose the others."""
+    blank_state = {"qty": 0, "fill_price": 0.00, "close_price": 0.00, "high_low": 0.00, "balance_before": 0.00, "mll": -2000.00, "violation_time": "", "instrument": "NQ"}
+    for key, val in blank_state.items():
+        st.session_state[key] = val
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
 
 # --- 3. Optimized Google Sheets Connection ---
@@ -224,6 +243,36 @@ with btn_col2:
 with btn_col3:
     if st.button("🗑️ Clear All"): clear_all()
 
+# --- 6.5 Account Management ---
+st.subheader("👤 Session Accounts")
+acc_col1, acc_col2, acc_col3 = st.columns([2, 2, 1])
+
+with acc_col1:
+    # The dropdown to pick the account
+    selected_acc = st.selectbox("📂 Switch Active Account", options=list(st.session_state.accounts_db.keys()), key="acc_selector_widget")
+    
+    # If the user picks a different account, load it and refresh!
+    if selected_acc != st.session_state.current_acc_name:
+        load_account(selected_acc)
+        st.rerun()
+
+with acc_col2:
+    new_acc_name = st.text_input("New Account Name", placeholder="e.g. Apex-01", key="new_acc_input")
+
+with acc_col3:
+    st.write("") # Spacer to align the button with the text boxes
+    st.write("")
+    if st.button("➕ Create Account", use_container_width=True):
+        if new_acc_name and new_acc_name not in st.session_state.accounts_db:
+            # Create a blank slate for the new account
+            blank_state = STATE_DEFAULTS.copy()
+            blank_state.update({"qty": 0, "fill_price": 0.00, "close_price": 0.00, "high_low": 0.00, "balance_before": 0.00, "violation_time": ""})
+            st.session_state.accounts_db[new_acc_name] = blank_state
+            
+            # Instantly load into the new account
+            load_account(new_acc_name)
+            st.rerun()
+
 # --- 7. Main Inputs ---
 st.subheader("Trade Details")
 curr_qty = st.session_state.qty
@@ -241,7 +290,7 @@ with r1c2:
 with r1c3:
     balance_before = st.number_input("Balance Before", format="%.2f", key="balance_before")
 with r1c4:
-    instrument = st.selectbox("Instrument", options=list(INSTRUMENTS.keys()))
+    instrument = st.selectbox("Instrument", options=list(INSTRUMENTS.keys()), key="instrument")
 
 # --- ROW 2: Execution Data ---
 r2c1, r2c2, r2c3, r2c4 = st.columns(4)
@@ -398,6 +447,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

@@ -257,7 +257,7 @@ with acc_col1:
         st.rerun()
 
 with acc_col2:
-    new_acc_name = st.text_input("New Account Name", placeholder="e.g. Apex-01", key="new_acc_input")
+    new_acc_name = st.text_input("New Account Name", placeholder="e.g. Account 1", key="new_acc_input")
 
 with acc_col3:
     st.write("") # Spacer to align the button with the text boxes
@@ -447,6 +447,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

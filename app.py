@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
 from streamlit_gsheets import GSheetsConnection
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -270,6 +271,60 @@ mc1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
 mc2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 mc3.metric("Difference", f"${difference:,.2f}")
 
+# --- 8.5 Visual Representation ---
+if qty != 0:
+    st.divider()
+    
+    # Calculate how much $1 moves the price, to find the exact MLL Price Level
+    dollar_per_point = t_val * t_pt * abs(qty)
+    points_to_mll = dist_2_mll / dollar_per_point if dollar_per_point != 0 else 0
+    
+    if direction == "Long":
+        mll_price = fill_price - points_to_mll
+        path_color = "#00d26a" # Greenish
+    else:
+        mll_price = fill_price + points_to_mll
+        path_color = "#f94144" # Reddish
+        
+    # Build the Chart
+    fig = go.Figure()
+    
+    # 1. The Simulated Trade Path (V-shape)
+    fig.add_trace(go.Scatter(
+        x=["1. Entry", "2. Max Excursion (MAE)", "3. Exit"],
+        y=[fill_price, high_low, close_price],
+        mode='lines+markers',
+        name='Trade Path',
+        marker=dict(size=14, color=['#4361ee', '#f94144' if is_invalid else '#f9c74f', '#4361ee']),
+        line=dict(width=4, color=path_color),
+        hovertemplate="<b>%{x}</b><br>Price: %{y:.2f}<extra></extra>"
+    ))
+    
+    # 2. The MLL Limit Line (Dashed Red Line)
+    fig.add_hline(
+        y=mll_price, 
+        line_dash="dash", 
+        line_color="#f94144", 
+        line_width=2,
+        annotation_text=f"🚨 MLL Level: {mll_price:.2f}", 
+        annotation_position="bottom right" if direction=="Long" else "top right",
+        annotation_font_color="#f94144"
+    )
+    
+    # 3. Chart Layout & Styling
+    fig.update_layout(
+        title="Trade Excursion vs. MLL Boundary",
+        yaxis=dict(side="right", title="Price Level", tickformat=".2f"),
+        xaxis=dict(title="Simulated Timeline"),
+        height=400,
+        margin=dict(l=20, r=40, t=50, b=20),
+        showlegend=False,
+        hovermode="x unified"
+    )
+    
+    # Render the chart in Streamlit
+    st.plotly_chart(fig, use_container_width=True)
+
 if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
 else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
 
@@ -318,6 +373,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

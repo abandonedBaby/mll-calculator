@@ -140,6 +140,10 @@ def sync_news_archive():
             upload_df['title'] = upload_df['title'].astype(str)
             upload_df['Event_Time'] = upload_df['Event_Time'].astype(str)
             
+            try:
+                conn.update(worksheet="News_Archive", data=upload_df)
+            except Exception:
+                pass # Fails silently without crashing the app
 
 
     # Rehydrate the unified data back into usable Timezone-Aware Datetimes for the app to use
@@ -297,23 +301,6 @@ mc1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
 mc2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
 mc3.metric("Difference", f"${difference:,.2f}")
 
-# --- 8. Math & Output ---
-t_val, t_pt = INSTRUMENTS[instrument]["Tick Value"], INSTRUMENTS[instrument]["Ticks per Pt"]
-direction = "Flat" if qty == 0 else ("Long" if qty > 0 else "Short")
-
-mae = - (abs(high_low - fill_price) * t_val * t_pt * abs(qty))
-dist_2_mll = balance_before - mll
-difference = dist_2_mll + mae  
-is_invalid = abs(mae) <= dist_2_mll
-
-st.subheader("Calculation Results")
-st.write(f"**Tick Value:** {t_val:,.2f} &nbsp;|&nbsp; **Ticks per Pt:** {t_pt:,.2f} &nbsp;|&nbsp; **Direction:** {direction}")
-
-mc1, mc2, mc3 = st.columns(3)
-mc1.metric("MAE", f"${mae:,.2f}", help="Maximum Adverse Excursion")
-mc2.metric("Distance to MLL", f"${dist_2_mll:,.2f}")
-mc3.metric("Difference", f"${difference:,.2f}")
-
 # --- 8.1 STATUS NOTIFICATION ---
 if is_invalid: st.error("**Status:** Invalid - The loss did not exceed the MLL distance.")
 else: st.success("**Status:** Valid Violation - The MLL limit was breached!")
@@ -423,6 +410,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

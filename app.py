@@ -123,7 +123,10 @@ def sync_news_archive():
         live_df['Event_Time_Str'] = live_df['Event_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
         if not archive_df.empty and 'Event_Time' in archive_df.columns:
-            existing_times = archive_df['Event_Time'].astype(str).tolist()
+            # THE FIX: Force Google's times into standard datetimes so "2:00" perfectly matches "02:00"
+            archive_times_cleaned = pd.to_datetime(archive_df['Event_Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
+            existing_times = archive_times_cleaned.tolist()
+            
             new_rows = live_df[~live_df['Event_Time_Str'].isin(existing_times)]
         else:
             new_rows = live_df
@@ -131,11 +134,11 @@ def sync_news_archive():
         if not new_rows.empty:
             append_df = new_rows[['title', 'Event_Time_Str']].rename(columns={'Event_Time_Str': 'Event_Time'})
             archive_df = pd.concat([archive_df, append_df], ignore_index=True)
+            
+            # Clean up the whole archive format before saving
+            archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
             archive_df = archive_df.drop_duplicates(subset=['Event_Time', 'title'])
             
-            # --- THE FIX ---
-            # Google Sheets hates Python Data/Time objects. 
-            # We force a copy of the dataframe to be 100% plain text before sending it to the cloud.
             upload_df = archive_df.copy()
             upload_df['title'] = upload_df['title'].astype(str)
             upload_df['Event_Time'] = upload_df['Event_Time'].astype(str)
@@ -143,10 +146,9 @@ def sync_news_archive():
             try:
                 conn.update(worksheet="News_Archive", data=upload_df)
             except Exception:
-                pass # Fails silently without crashing the app
+                pass
 
-
-    # Rehydrate the unified data back into usable Timezone-Aware Datetimes for the app to use
+    # Rehydrate the unified data back into usable Timezone-Aware Datetimes
     if not archive_df.empty and 'Event_Time' in archive_df.columns:
         archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time'])
         if archive_df['Event_Time'].dt.tz is None:
@@ -410,6 +412,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

@@ -5,6 +5,7 @@ from streamlit_gsheets import GSheetsConnection
 import urllib.request
 import xml.etree.ElementTree as ET
 import datetime
+import requests
 
 st.set_page_config(
     page_title="Trade Violation Checker", 
@@ -36,6 +37,24 @@ def clear_all():
         st.session_state[key] = "" if key == "violation_time" else 0.00
     st.session_state.qty = 0
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
+
+def send_telegram_alert(error_message, pasted_data):
+    """Sends a silent error log to your Telegram account."""
+    bot_token = st.secrets.get("telegram_token")
+    chat_id = st.secrets.get("telegram_chat_id")
+    
+    if bot_token and chat_id:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        # Truncate pasted data so it doesn't send a massive text wall
+        truncated_data = pasted_data[:300] + "..." if len(pasted_data) > 300 else pasted_data
+        
+        message = f"🚨 **App Error Alert**\n{error_message}\n\n**Raw Pasted Text:**\n`{truncated_data}`"
+        
+        payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+        try:
+            requests.post(url, json=payload, timeout=5)
+        except Exception:
+            pass # Fail silently so it doesn't crash the user's app
 
 # --- 3. Optimized Google Sheets Connection ---
 # Define connection globally so we can use it for both tabs
@@ -178,8 +197,14 @@ def weighted_average_dialog():
                 st.session_state.fill_price = float((df["Qty"] * df["Price"]).sum() / total_q)
                 st.session_state.fill_data = df 
                 st.rerun()
-            else: st.error("Total quantity is 0.")
-        else: st.error("No valid data found in Columns H and K.")
+            else: 
+                err_msg = "Total quantity calculated as 0."
+                st.error(err_msg)
+                send_telegram_alert(err_msg, pasted_text)
+        else: 
+            err_msg = "No valid data found in Columns H and K."
+            st.error(err_msg)
+            send_telegram_alert(err_msg, pasted_text)
             
     st.divider()
     st.caption("Or edit rows manually:")
@@ -193,7 +218,8 @@ def weighted_average_dialog():
             st.session_state.fill_price = float((valid["Qty"] * valid["Price"]).sum() / total_q)
             st.session_state.fill_data = edited_df 
             st.rerun() 
-        else: st.error("Please enter valid data.")
+        else: 
+            st.error("Please enter valid data.")
 
 # --- 6. Sidebar & Header UI ---
 with st.sidebar:
@@ -397,6 +423,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

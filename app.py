@@ -39,22 +39,27 @@ def clear_all():
     st.session_state.fill_data = pd.DataFrame([{"Qty": 0, "Price": 0.00}])
 
 def send_telegram_alert(error_message, pasted_data):
-    """Sends a silent error log to your Telegram account."""
+    """Sends a silent error log to your Telegram account (Diagnostic Version)."""
     bot_token = st.secrets.get("telegram_token")
     chat_id = st.secrets.get("telegram_chat_id")
     
     if bot_token and chat_id:
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        # Truncate pasted data so it doesn't send a massive text wall
         truncated_data = pasted_data[:300] + "..." if len(pasted_data) > 300 else pasted_data
-        
         message = f"🚨 **App Error Alert**\n{error_message}\n\n**Raw Pasted Text:**\n`{truncated_data}`"
-        
         payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+        
         try:
-            requests.post(url, json=payload, timeout=5)
-        except Exception:
-            pass # Fail silently so it doesn't crash the user's app
+            response = requests.post(url, json=payload, timeout=5)
+            # If Telegram rejects it, print the exact reason to the screen!
+            if response.status_code != 200:
+                st.error(f"Telegram API Error {response.status_code}: {response.text}")
+            else:
+                st.success("Telegram message sent successfully!")
+        except Exception as e:
+            st.error(f"Failed to connect to Telegram: {e}")
+    else:
+        st.error("Missing Telegram secrets! Check your Streamlit settings.")
 
 # --- 3. Optimized Google Sheets Connection ---
 # Define connection globally so we can use it for both tabs
@@ -423,6 +428,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

@@ -114,50 +114,45 @@ def sync_news_archive():
     """Reads GSheets Archive, fetches new events, appends if missing, and returns the unified list."""
     live_df = fetch_live_news()
     
-    # --- THE UTC FIX ---
-    # The XML feed provides times in UTC. We must shift them to Eastern 
-    # BEFORE comparing them to your manually entered EST times!
-    if not live_df.empty and 'Event_Time' in live_df.columns:
-        live_df['Event_Time'] = pd.to_datetime(live_df['Event_Time'])
-        # If the feed doesn't have a timezone tag, tell Python it's UTC
-        if live_df['Event_Time'].dt.tz is None:
-            live_df['Event_Time'] = live_df['Event_Time'].dt.tz_localize('UTC')
-            
-        # Convert to Eastern Time, then strip the timezone away so it saves purely as clock-time
-        live_df['Event_Time'] = live_df['Event_Time'].dt.tz_convert('US/Eastern').dt.tz_localize(None)
-
     try:
         archive_df = conn.read(worksheet="News_Archive", ttl="0m").dropna(how="all")
     except Exception:
         archive_df = pd.DataFrame(columns=["title", "Event_Time"])
 
     if not live_df.empty:
-        live_df['Event_Time_Str'] = live_df['Event_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        # 1. Clean Live Data (Strip invisible spaces & standardize time format)
+        live_df['title'] = live_df['title'].astype(str).str.strip()
+        live_df['Event_Time'] = pd.to_datetime(live_df['Event_Time'], errors='coerce')
+        live_df['Event_Time'] = live_df['Event_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
+        # 2. Clean Archive Data
         if not archive_df.empty and 'Event_Time' in archive_df.columns:
-            archive_times_cleaned = pd.to_datetime(archive_df['Event_Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
-            existing_times = archive_times_cleaned.tolist()
-            new_rows = live_df[~live_df['Event_Time_Str'].isin(existing_times)]
-        else:
-            new_rows = live_df
+            archive_df['title'] = archive_df['title'].astype(str).str.strip()
+            archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 3. Combine Everything into one list
+        combined_df = pd.concat([archive_df, live_df], ignore_index=True)
+        combined_df = combined_df.dropna(subset=['Event_Time', 'title'])
+        
+        # 4. SLEDGEHAMMER DEDUPLICATION
+        # Extract just the YYYY-MM-DD. If Title + Date matches an existing entry, delete it!
+        combined_df['Date_Only'] = pd.to_datetime(combined_df['Event_Time']).dt.date
+        combined_df = combined_df.drop_duplicates(subset=['title', 'Date_Only'], keep='first')
+        combined_df = combined_df.drop(columns=['Date_Only'])
+        
+        # 5. Save the perfectly clean list back to Google Sheets
+        upload_df = combined_df.copy()
+        upload_df['title'] = upload_df['title'].astype(str)
+        upload_df['Event_Time'] = upload_df['Event_Time'].astype(str)
+        
+        try:
+            conn.update(worksheet="News_Archive", data=upload_df)
+        except Exception:
+            pass
             
-        if not new_rows.empty:
-            append_df = new_rows[['title', 'Event_Time_Str']].rename(columns={'Event_Time_Str': 'Event_Time'})
-            archive_df = pd.concat([archive_df, append_df], ignore_index=True)
-            
-            archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
-            archive_df = archive_df.drop_duplicates(subset=['Event_Time', 'title'])
-            
-            upload_df = archive_df.copy()
-            upload_df['title'] = upload_df['title'].astype(str)
-            upload_df['Event_Time'] = upload_df['Event_Time'].astype(str)
-            
-            try:
-                conn.update(worksheet="News_Archive", data=upload_df)
-            except Exception:
-                pass
+        archive_df = combined_df
 
-    # Rehydrate the unified data back into usable Timezone-Aware Datetimes for the app
+    # Rehydrate the data into usable Timezones for the Violation Checker
     if not archive_df.empty and 'Event_Time' in archive_df.columns:
         archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time'])
         if archive_df['Event_Time'].dt.tz is None:
@@ -421,6 +416,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

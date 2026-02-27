@@ -284,7 +284,7 @@ st.markdown("""
 
 btn_col1, btn_col2, btn_col3 = st.columns(3)
 with btn_col1:
-    if st.button("🧮 Add Multiple Entries"): weighted_average_dialog()
+    if st.button("🧮 Add Multiple Entries"): multi_entry_dialog()
 with btn_col2:
     if is_admin and st.button("⚙️ Manage Instruments"): manage_instruments_dialog()
 with btn_col3:
@@ -446,6 +446,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

@@ -192,44 +192,74 @@ def manage_instruments_dialog():
         except Exception:
             st.error("Failed to save to Google Sheets.")
 
-@st.dialog("Calculate Weighted Average Fill")
-def weighted_average_dialog():
-    st.markdown("Enter multiple fills manually, or **paste raw tab-delimited data**.")
-    pasted_text = st.text_area("📋 Quick Paste", placeholder="Paste rows here...", height=100)
+@st.dialog("Add Multiple Entries")
+def multi_entry_dialog():
+    st.markdown("Paste your copied rows below. Supports simple format (`-1 25381`) OR full broker exports.")
     
-    if st.button("🚀 Extract & Apply", type="primary"):
-        parsed_rows = parse_pasted_data(pasted_text)
-        if parsed_rows:
-            df = pd.DataFrame(parsed_rows)
-            total_q = int(df["Qty"].sum())
-            if total_q != 0:
-                st.session_state.qty = total_q
-                st.session_state.fill_price = float((df["Qty"] * df["Price"]).sum() / total_q)
-                st.session_state.fill_data = df 
-                st.rerun()
-            else: 
-                err_msg = "Total quantity calculated as 0."
-                st.error(err_msg)
-                send_telegram_alert(err_msg, pasted_text)
-        else: 
-            err_msg = "No valid data found in Columns H and K."
-            st.error(err_msg)
-            send_telegram_alert(err_msg, pasted_text)
+    # The Quick Paste Box
+    raw_text = st.text_area(
+        "Quick Paste", 
+        height=300, 
+        label_visibility="collapsed", 
+        placeholder="-1 25381\n-1 25386\nOR\nBroker Data..."
+    )
+    
+    # The Extract & Apply Button
+    if st.button("Extract & Apply", type="primary", use_container_width=True):
+        if raw_text.strip():
+            total_qty = 0
+            total_value = 0.0
             
-    st.divider()
-    st.caption("Or edit rows manually:")
-    edited_df = st.data_editor(st.session_state.fill_data, num_rows="dynamic", use_container_width=True, hide_index=True)
-    
-    if st.button("Calculate & Apply Manual Edits"):
-        valid = edited_df[(edited_df["Qty"] != 0) & (edited_df["Price"] > 0)]
-        if not valid.empty:
-            total_q = int(valid["Qty"].sum())
-            st.session_state.qty = total_q
-            st.session_state.fill_price = float((valid["Qty"] * valid["Price"]).sum() / total_q)
-            st.session_state.fill_data = edited_df 
-            st.rerun() 
-        else: 
-            st.error("Please enter valid data.")
+            # Read line by line
+            lines = raw_text.strip().split("\n")
+            for line in lines:
+                line = line.strip()
+                if not line: 
+                    continue
+                
+                # Split by strict spreadsheet Tabs first to preserve the exact column structure
+                tab_parts = line.split('\t')
+                
+                try:
+                    # SCENARIO 1: Broker/Excel Export (Has many columns)
+                    # A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9
+                    if len(tab_parts) >= 10:
+                        q_str = tab_parts[7].replace(',', '').strip() # Column H
+                        p_str = tab_parts[9].replace(',', '').strip() # Column J
+                        
+                    # SCENARIO 2: Simple Format (-1 25381)
+                    else:
+                        # Fallback to splitting by normal spaces
+                        space_parts = line.split()
+                        if len(space_parts) >= 2:
+                            q_str = space_parts[0].replace(',', '').strip()
+                            p_str = space_parts[1].replace(',', '').strip()
+                        else:
+                            continue # Skip incomplete lines
+                            
+                    # Convert to math-friendly numbers
+                    q = int(q_str)
+                    p = float(p_str)
+                    
+                    total_qty += q
+                    total_value += (q * p)
+                    
+                except (ValueError, IndexError):
+                    # Safely ignore header rows or empty column blanks
+                    continue
+                    
+            if total_qty != 0:
+                # Calculate the true weighted average price
+                avg_price = total_value / total_qty
+                
+                # Push the results to the main screen
+                st.session_state.qty = total_qty
+                st.session_state.fill_price = round(abs(avg_price), 4)
+                st.rerun()
+            else:
+                st.error("⚠️ Could not find valid numbers, or the total quantity nets out to 0.")
+        else:
+            st.warning("Please paste some data first.")
 
 # --- 6. Sidebar & Header UI ---
 with st.sidebar:
@@ -416,6 +446,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

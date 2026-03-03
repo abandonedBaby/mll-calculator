@@ -222,10 +222,10 @@ def multi_entry_dialog():
                 
                 try:
                     # SCENARIO 1: Broker/Excel Export (Has many columns)
-                    # A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9
-                    if len(tab_parts) >= 10:
-                        q_str = tab_parts[7].replace(',', '').strip() # Column H
-                        p_str = tab_parts[9].replace(',', '').strip() # Column J
+                    # The actual Fill Price is usually in the 11th column (Index 10)
+                    if len(tab_parts) >= 11:
+                        q_str = tab_parts[7].replace(',', '').strip() 
+                        p_str = tab_parts[10].replace(',', '').strip() 
                         
                     # SCENARIO 2: Simple Format (-1 25381)
                     else:
@@ -446,6 +446,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

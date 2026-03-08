@@ -387,7 +387,7 @@ if qty != 0:
     # Build the Chart
     fig = go.Figure()
     
-    # The Simulated Trade Path (V-shape)
+# 1. The Simulated Trade Path (V-shape)
     fig.add_trace(go.Scatter(
         x=["1. Entry", "2. Max Excursion (MAE)", "3. Exit"],
         y=[fill_price, high_low, close_price],
@@ -402,10 +402,11 @@ if qty != 0:
         name='Trade Path',
         marker=dict(size=14, color=['#4361ee', '#f94144' if is_invalid else '#f9c74f', '#4361ee']),
         line=dict(width=4, color=path_color),
-        hovertemplate="<b>%{x}</b><br>Price: %{y:.2f}<extra></extra>"
+        hovertemplate="<b>%{x}</b><br>Price: %{y:.2f}<extra></extra>",
+        cliponaxis=False  # <--- THIS IS THE MAGIC FIX: Allows text to draw outside the box!
     ))
     
-    # The MLL Limit Line (Dashed Red Line)
+    # 2. The MLL Limit Line (Dashed Red Line)
     fig.add_hline(
         y=mll_price, 
         line_dash="dash", 
@@ -416,13 +417,13 @@ if qty != 0:
         annotation_font_color="#f94144"
     )
     
-    # Chart Layout & Styling
+    # 3. Chart Layout & Styling
     fig.update_layout(
         title="Trade Excursion vs. MLL Boundary",
         yaxis=dict(side="right", title="Price Level", tickformat=".2f"),
         xaxis=dict(title="Simulated Timeline"),
-        height=400,
-        margin=dict(l=20, r=40, t=50, b=20),
+        height=450, # Made slightly taller to accommodate the extra text lines
+        margin=dict(l=20, r=40, t=80, b=60), # Increased Top (t) and Bottom (b) padding!
         showlegend=False,
         hovermode="x unified"
     )
@@ -455,6 +456,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

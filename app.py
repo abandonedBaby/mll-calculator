@@ -428,7 +428,8 @@ if qty != 0:
         line_dash="dash", 
         line_color="#f94144", 
         line_width=2,
-        annotation_text=f"🚨 MLL Level: {mll_price:.2f}", 
+        # --- ADDED THE BALANCE BELOW THE PRICE ---
+        annotation_text=f"🚨 MLL Level: {mll_price:.2f}<br>Bal: ${mll:,.2f}", 
         annotation_position="bottom right" if direction=="Long" else "top right",
         annotation_font_color="#f94144"
     )
@@ -472,6 +473,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

@@ -353,14 +353,27 @@ if violation_time.strip():
         vt_dt = pd.to_datetime(violation_time.strip()).tz_localize('US/Central')
         
         if not news_df.empty:
+            violating_events = []
+            event_time_cst_str = ""
+            
             for _, row in news_df.iterrows():
                 event_time = row['Event_Time']
                 time_diff = abs((vt_dt - event_time).total_seconds())
+                
                 if time_diff <= 60:
-                    event_time_cst = event_time.tz_convert('US/Central')
-                    news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of a major economic event: **{row['title']}** ({event_time_cst.strftime('%I:%M %p CST')})"
-                    st.warning(news_warning, icon="🚨")
-                    break
+                    # Instead of breaking, we gather ALL matching titles into a list
+                    violating_events.append(str(row['title']))
+                    # We just need to grab the formatted clock time once
+                    if not event_time_cst_str:
+                        event_time_cst_str = event_time.tz_convert('US/Central').strftime('%I:%M %p CST')
+            
+            # If we found any violations, build the combined alert
+            if violating_events:
+                events_joined = ", ".join(violating_events)
+                event_word = "economic events" if len(violating_events) > 1 else "economic event"
+                
+                news_warning = f"⚠️ **News Violation Warning!** This trade occurred within 1 minute of major {event_word}: **{events_joined}** ({event_time_cst_str})"
+                st.warning(news_warning, icon="🚨")
     except Exception:
         pass
 
@@ -459,6 +472,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

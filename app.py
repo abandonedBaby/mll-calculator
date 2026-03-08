@@ -102,7 +102,9 @@ def fetch_live_news():
                 if time_str and 'All Day' not in time_str and 'Tentative' not in time_str:
                     try:
                         dt_str = f"{date_str} {time_str}"
-                        dt_obj = pd.to_datetime(dt_str).tz_localize('US/Eastern')
+                        # --- THE TIMEZONE FIX ---
+                        # Treat the raw feed as UTC, convert to Eastern, then strip timezone to save as pure clock time
+                        dt_obj = pd.to_datetime(dt_str).tz_localize('UTC').tz_convert('US/Eastern').tz_localize(None)
                         events.append({'title': title, 'Event_Time': dt_obj})
                     except Exception:
                         pass
@@ -116,31 +118,32 @@ def sync_news_archive():
     
     try:
         archive_df = conn.read(worksheet="News_Archive", ttl="0m").dropna(how="all")
-    except Exception:
-        archive_df = pd.DataFrame(columns=["title", "Event_Time"])
+    except Exception as e:
+        # --- THE DATA LOSS FIX ---
+        # If Google Sheets API hiccups, ABORT entirely. Never overwrite with a blank slate.
+        st.sidebar.error("⚠️ Failed to load News History from cloud. Sync aborted to protect data.")
+        return st.session_state.get('news_archive_df', pd.DataFrame())
 
     if not live_df.empty:
-        # 1. Clean Live Data (Strip invisible spaces & standardize time format)
+        # Clean Live Data (It is safely in Eastern time now)
         live_df['title'] = live_df['title'].astype(str).str.strip()
-        live_df['Event_Time'] = pd.to_datetime(live_df['Event_Time'], errors='coerce')
-        live_df['Event_Time'] = live_df['Event_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        live_df['Event_Time'] = pd.to_datetime(live_df['Event_Time'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
         
-        # 2. Clean Archive Data
+        # Clean Archive Data
         if not archive_df.empty and 'Event_Time' in archive_df.columns:
             archive_df['title'] = archive_df['title'].astype(str).str.strip()
             archive_df['Event_Time'] = pd.to_datetime(archive_df['Event_Time'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
         
-        # 3. Combine Everything into one list
+        # Combine Everything into one list
         combined_df = pd.concat([archive_df, live_df], ignore_index=True)
         combined_df = combined_df.dropna(subset=['Event_Time', 'title'])
         
-        # 4. SLEDGEHAMMER DEDUPLICATION
-        # Extract just the YYYY-MM-DD. If Title + Date matches an existing entry, delete it!
+        # Deduplication
         combined_df['Date_Only'] = pd.to_datetime(combined_df['Event_Time']).dt.date
         combined_df = combined_df.drop_duplicates(subset=['title', 'Date_Only'], keep='first')
         combined_df = combined_df.drop(columns=['Date_Only'])
         
-        # 5. Save the perfectly clean list back to Google Sheets
+        # Save the perfectly clean list back to Google Sheets
         upload_df = combined_df.copy()
         upload_df['title'] = upload_df['title'].astype(str)
         upload_df['Event_Time'] = upload_df['Event_Time'].astype(str)
@@ -456,6 +459,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 

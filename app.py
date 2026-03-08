@@ -369,6 +369,11 @@ if qty != 0:
     dollar_per_point = t_val * t_pt * abs(qty)
     points_to_mll = dist_2_mll / dollar_per_point if dollar_per_point != 0 else 0
     
+    # Calculate running balances for the chart labels
+    realized_pnl = (close_price - fill_price) * t_val * t_pt * qty
+    balance_at_mae = balance_before + mae # mae is already a negative number
+    balance_at_exit = balance_before + realized_pnl
+
     # Set dynamic colors AND smart text label positioning
     if direction == "Long":
         mll_price = fill_price - points_to_mll
@@ -387,9 +392,13 @@ if qty != 0:
         x=["1. Entry", "2. Max Excursion (MAE)", "3. Exit"],
         y=[fill_price, high_low, close_price],
         mode='lines+markers+text',
-        text=[f"Entry: {fill_price:.2f}", f"MAE: {high_low:.2f}", f"Exit: {close_price:.2f}"], 
+        text=[
+            f"Entry: {fill_price:.2f}<br>Bal: ${balance_before:,.2f}", 
+            f"MAE: {high_low:.2f}<br>Bal: ${balance_at_mae:,.2f}", 
+            f"Exit: {close_price:.2f}<br>Bal: ${balance_at_exit:,.2f}"
+        ], 
         textposition=label_positions,
-        textfont=dict(size=14, color="white"),
+        textfont=dict(size=13, color="white"),
         name='Trade Path',
         marker=dict(size=14, color=['#4361ee', '#f94144' if is_invalid else '#f9c74f', '#4361ee']),
         line=dict(width=4, color=path_color),
@@ -446,6 +455,7 @@ if news_warning:
 with st.expander("📄 View / Copy Text Summary"):
     st.caption("Hover over the top right corner to copy this data.")
     st.code(summary_text, language="text")
+
 
 
 
